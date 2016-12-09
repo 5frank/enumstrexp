@@ -1,4 +1,8 @@
-enumstrexp
-==========
+menumstr - make enum strings
 
-enum to string exporter for the c/c++
+
+
+
+FUTURE WORK
+- ctags?
+- gccxml/CastXML ?
