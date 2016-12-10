@@ -3,8 +3,8 @@
 #ifndef ENUMSTR_INCLUDE_H_
 #define ENUMSTR_INCLUDE_H_
 #include <wchar.h>
-#include "mkenumstr.h"
-#include "myenums.h"
+#include "menumstr.h"
+#include "testenums.h"
 
 /*
 either include all enum defs files or add relative path to sympol table(s)
@@ -24,26 +24,25 @@ i.e. .elf or .o
 should also create functions
 #define enumstr_ma_state_MAX_LENGTH
 */
-const char * enumstr_ma_state(unsigned int a)
-MKENUMSTR_FUNC("stm.h:sysState_t", 0, "^sysState_/maState_");
+const char * enumstr_astate(unsigned int a)
+MENUS_VALUE2STR("enum testenum_negjmp_e", 0, "");
 
 
-
-const char * enumstr_ma_flags(unsigned int bitpos)
-MKENUMSTR_FUNC("sysProtection_flag_t", O_BITFLAGS|O_LSTRIP_COMMON, "^sysState_/maState_");
+const char * enumstr_someflags(unsigned int bitpos)
+MENUS_VALUE2STR("enum testenum_flg32_e", 0, "");
 
 
 // TODO this should need no args, type taken from type
-const char * enumstr_myenum(enum myEnum_e x)
-MKENUMSTR_FUNC(enum myEnum_e, 0, "");
+const char * enumstr_myenum(enum testenum_simple_e x)
+MENUS_VALUE2STR("", "");
 
 
-const wchar_t * enumstr_myenumw(enum myEnum_e x)
-MKENUMSTR_FUNC(enum myEnum_e, 0, "");
+const wchar_t * enumstr_myenumw(enum testenum_negjmp_e x)
+MENUS_VALUE2STR(enum testenum_negjmp_e, 0, "A", SUB("B"), SUB(a));
 
 
 const wchar_t * enumstr_myenumExtraUnusedParams(int x, int y)
-MKENUMSTR_FUNC(enum myEnum_e, 0, "");
+MENUS_VALUE2STR(enum testenum_negjmp_e, 0, "");
 
 /*
 const char * enumstr_ma_flags(unsigned int bitpos)

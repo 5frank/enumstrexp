@@ -1,4 +1,3 @@
-
 #!/bin/sh
 # this script is needed as python has to be invoked by GDB
 SCRIPT=$(readlink -f "$0")
@@ -11,8 +10,10 @@ SHELL_ARGS="$@"; #$(echo $@ | tr -d ' ')
 echo " ----------- GCC: ------------ "
 PROG_NAME=main
 gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g3 -ggdb -std=gnu99 -Wall \
--export-dynamic -fvisibility=hidden -fno-eliminate-unused-debug-types
-
+-export-dynamic -fvisibility=hidden -fno-eliminate-unused-debug-types \
+-I "$SCRIPTPATH" \
+-I "$SCRIPTPATH/../test/" \
+-I "$SCRIPTPATH/../test/codegen" 
 #-Wtraditional-conversion
 #-Wconversion
 #nm |
@@ -22,7 +23,6 @@ gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g3 -ggdb -std=gnu99 -Wall \
 #echo " ----------- Exe: ------------ "
 #./$PROG_NAME.o $SYMADDRS
 #rm $PROG_NAME.o
-
 
 
 SYMB_OBJ="$SCRIPTPATH/$PROG_NAME.o"

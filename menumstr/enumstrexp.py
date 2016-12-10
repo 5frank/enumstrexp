@@ -38,6 +38,8 @@ logging.basicConfig(
     disable_existing_loggers=True)
 
 
+isInAndTrue = lambda d, k: bool(k in d and d[k])
+
 def rtassert(condition, fmt='', *args):
     if not condition:
         log.error(fmt, args) # TODO critical?
@@ -91,13 +93,6 @@ def gdbLoadSymbolsFrom(fpath):
 
 
 def gdbGetFuncInfo(func, srcfile=''):
-    '''
-    r = gdb.execute('info functions {}'.format(func), False, True)
-    for line in r.split('\n'):
-        if func in line:
-    '''
-
-
     try:
         t = gdb.types.get_basic_type(gdb.lookup_type(func))
     except RuntimeError:
@@ -110,10 +105,74 @@ def gdbGetFuncInfo(func, srcfile=''):
     s = str(t)
     m = re.search(r'(.*?)\((.*?)\)', s)
     rettype = m.group(1)
-    prmtype = m.group(2)
+    prmtype = m.group(2) # will give all params if more then one
     return rettype, prmtype
     #return m #str(m.group(0))
 
+
+
+def gdbGetStrArray(instance):
+    ary = []
+    for i in xrange(0,7): # in instance: #.type.fields():
+        v = instance[i]
+        v = str(v.string())
+        if v.endswith('""'):
+            v = v.rstrip('""') # FIXME why ""?
+        ary.append(v)
+    return ary
+
+def gdbGetJobAtAddr(addr, scope=''):
+    try:
+        jobtype = gdb.lookup_type('struct mkenumstr_descr_s')
+        jobaddr = gdb.Value(long(addr, 16))
+        log.debug('Locating job at addr %s', str(jobaddr))
+        jobptr = jobaddr.cast(jobtype.pointer())
+        jobinstance = jobptr.dereference()
+
+        job = {}
+        for field in jobinstance.type.fields():
+            fname = field.name
+            ftype = field.type
+            fval = jobinstance[fname]
+            c = fval.type.code
+            if c == gdb.TYPE_CODE_PTR:
+                v = str(fval.string())#.dereference()
+                #v = v.fetch_lazy()
+                #v = v.string()
+                if v.startswith('"') and v.endswith('"'):
+                    v = v.strip('"')
+            elif c == gdb.TYPE_CODE_INT:
+                v = int(fval)
+            elif c == gdb.TYPE_CODE_STRUCT or c == gdb.TYPE_CODE_UNION:
+                log.error('Not handled WTF!')
+            elif c == gdb.TYPE_CODE_ARRAY:
+                v = gdbGetStrArray(fval)
+            else:
+                log.warning('Not x handled WTF!')
+                v = str(fval)
+
+            #log.debug('k:"{}", t:"{}",  v:"{}"'.format(fname, ftype, v))
+            #print(fval) #print(dir(fval))
+            job[str(fname)] = v
+        #for name, field in jobstruct.type.iteritems():
+        log.debug(job)
+        return job
+
+    except gdb.error as e:
+        log.error(str(e))
+    except RuntimeError as e:
+        log.error(str(e))
+    return None
+
+
+
+def expandOptFlags(jobs):
+    flgs = gdbGetEnumDict('enum mkenumstr_oflags_e')
+    assert(flgs)
+    flglut = {v: k for k, v in flgs.iteritems()} #invert/reverse dict
+    assert(len(flglut) == len(flgs)) # no duplictes
+
+    #for job in jobs:
 
 
 def getJobAddr(symbfile, prefix='mkenumstr_job'):
@@ -152,18 +211,31 @@ def getJobAddr(symbfile, prefix='mkenumstr_job'):
 
     return addrs
 
+def byteify(x):
+    ''' python < 3. convert unicode to string '''
+    if isinstance(x, dict):
+        return {byteify(key): byteify(value)
+                for key, value in x.iteritems()}
+    elif isinstance(x, list):
+        return [byteify(element) for element in x]
+    elif isinstance(x, unicode):
+        return x.encode('utf-8')
+    else:
+        return x
 
 def getJobs(exefile, addresses):
-    def byteify(x):
-        if isinstance(x, dict):
-            return {byteify(key): byteify(value)
-                    for key, value in x.iteritems()}
-        elif isinstance(x, list):
-            return [byteify(element) for element in x]
-        elif isinstance(x, unicode):
-            return x.encode('utf-8')
-        else:
-            return x
+    jobs = []
+    for addr in addresses:
+        cfg = gdbGetJobAtAddr(addr)
+        cfg = byteify(cfg) # python < 3 no unicode. extra sanity
+        rettype, prmtype = gdbGetFuncInfo(cfg['func'])
+        cfg['funcrettype'] = rettype
+        cfg['funcprmtype'] = prmtype
+        job = {'conf' : cfg, 'exportnfo' :{} }
+        jobs.append(job)
+
+    return jobs #gdbGetJobAtAddr(addresses[0])
+    exit(0)
 
     rtassert_path(exefile)
 
@@ -237,7 +309,11 @@ def findCommonPrefix(members, maxIgnored=1, minMatchLen=2):
 def alterMemberNames(job):
     alternfo = []
     em = job['enumdefs'].copy() #
-    if job['conf']['lstrip']:
+    cfg = job['conf']
+
+
+
+    if isInAndTrue(cfg, 'lstrip'):
         prefix = findCommonPrefix(em.keys())
         if prefix:
             reExpr = '^{}'.format(prefix)
@@ -245,12 +321,8 @@ def alterMemberNames(job):
             reObj = re.compile(reExpr)
             em = {reObj.sub('', k):v for (k,v) in em.iteritems()}
 
-    if job['conf']['rstrip']:
+    if isInAndTrue(cfg, 'rstrip'):
         raise NotImplementedError('TODO rstrip automagic')
-
-    refmt = job['conf']['refmt']
-    if refmt:
-        pass
 
     job['exportnfo']['regexps'] = alternfo
     return em
@@ -268,7 +340,7 @@ def mkInvertDict(job):
     #>>> [k for k, v in rev_multidict.items() if len(values) > 1]
     return vald
 
-def mkStringRepr(jobs):
+def mkStrRepr(jobs):
     ''' Modifies callesr copy '''
     for job in jobs:
         if 'enumdefs' not in job:
@@ -292,7 +364,6 @@ def mkStringRepr(jobs):
 #----------------------generate code --------------------------
 
 
-
 def mkCCodeFuncSwitchCase(job, prmname='x', tablvl=1, usedefs=True, default='<?>'):
     if 'enumrepr' not in job:
         return default #FIXME
@@ -301,7 +372,7 @@ def mkCCodeFuncSwitchCase(job, prmname='x', tablvl=1, usedefs=True, default='<?>
     reprvkd = job['enumrepr']
     defsvkd = {v: k for k, v in job['enumdefs'].iteritems()}
 
-    asbitflags = job['conf']['bitflags']
+    asbitflags = bool(job['conf']['lutype'] == 'BITFLAG2STR')
 
     s = ''
     n = tablvl # tab level
@@ -327,14 +398,16 @@ def mkCCodeFuncSwitchCase(job, prmname='x', tablvl=1, usedefs=True, default='<?>
 def mkCCodeFunc(job, outfile=''):
 
     c = job['conf']
-    if c['bitflags']:
+    if c['lutype'] == 'BITFLAG2STR':
         prmname = 'bitpos'
         brief = 'Enum bit flag index to string lookup'
-        param = ' - bit position index representing a enum flag.'
-    else:
+        param = 'bit position index representing a enum flag. (LSB == 0)'
+    elif c['lutype'] == 'VALUE2STR':
         prmname = 'value'
         brief = 'Enum value to string lookup.'
-        param = ' - enum value.'
+        param = 'enum value.'
+    else:
+        raise KeyError('unknown lutype')
 
     s =  '/**\n'
     s += ' * @brief {}\n'.format(brief)
@@ -376,6 +449,26 @@ _parser.add_argument('-v', '--verbose',
     action='store_true',
     help='Verbose output')
 '''
+def cCompile(srcName):
+    #import tempfile
+    #tempfile.mkdtemp
+
+    # TODO safe tempfile
+    #gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g3 -ggdb -std=gnu99 -Wall \
+    #-export-dynamic -fvisibility=hidden -fno-eliminate-unused-debug-types
+
+    objName = os.path.filename(srcName) + '.o'
+    cmd = ['gcc', '-o', srcName, objName,
+    '-O0', '-g3', '-ggdb', '-std=gnu99', '-Wall',
+    '-fno-eliminate-unused-debug-types']
+
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    (out, err) = p.communicate()
+    if p.returncode != 0:
+        log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
+        return None
+
+    return objName
 
 
 def getLauncherVar(varname):
@@ -409,7 +502,7 @@ def main():
         log.error('Failed to looooookup %d enums', missingDefs)
         #TODO print which and exit
 
-    mkStringRepr(jobs)
+    mkStrRepr(jobs)
     pprint(jobs)
     mkCCode(jobs)
 
