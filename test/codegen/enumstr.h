@@ -25,11 +25,15 @@ should also create functions
 #define enumstr_ma_state_MAX_LENGTH
 */
 const char * enumstr_astate(unsigned int a)
-MENUS_VALUE2STR("enum testenum_negjmp_e", 0, "");
+MENUS_VALUE2STR(fromtype(enum testenum_negjmp_e), sansprefix());
 
+const char * enumstr_bstate(enum testenum_negjmp_e x)
+MENUS_VALUE2STR();
+
+#if 0
 
 const char * enumstr_someflags(unsigned int bitpos)
-MENUS_VALUE2STR("enum testenum_flg32_e", 0, "");
+MENUS_VALUE2STR(fromtype(("enum testenum_flg32_e"));
 
 
 // TODO this should need no args, type taken from type
@@ -38,12 +42,18 @@ MENUS_VALUE2STR("", "");
 
 
 const wchar_t * enumstr_myenumw(enum testenum_negjmp_e x)
-MENUS_VALUE2STR(enum testenum_negjmp_e, 0, "A", SUB("B"), SUB(a));
+MENUS_VALUE2STR(
+  fromtype("enum testenum_negjmp_e"),
+  sansprefix(),
+  sanssuffix(),
+  reformat("^testenum_negjmp_", ""), exclude(0));
 
 
 const wchar_t * enumstr_myenumExtraUnusedParams(int x, int y)
 MENUS_VALUE2STR(enum testenum_negjmp_e, 0, "");
 
+#endif
+//ENUM_VALUETOSTR_
 /*
 const char * enumstr_ma_flags(unsigned int bitpos)
 _MENUMSTR_PROTOTYPE("sysProtection_flag_t", "^sysState_/maState_", O_BITFLAGS);

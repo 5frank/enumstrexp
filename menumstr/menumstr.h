@@ -59,9 +59,9 @@ struct mkenumstr_descr_s
 {
   const char * enumid;
   const char * lutype;
-  const char * func;
-  const char * file;
-  unsigned int linenr;
+  const char * funcname;
+  const char * filename;
+  unsigned int filelinenr;
   const char * args[8];
 }; /* MKENUMS_JOIN(___mkenums_job_, __LINE__); */
 
@@ -69,19 +69,16 @@ struct mkenumstr_descr_s
 void mkenumstr_hideunused(volatile struct mkenumstr_descr_s * x, void* y)
 {}
 
-
-
-
-#define ___MENUMS_EXPAND(LUTYPE, ENUMID, A1, A2, A3, A4, A5, A6, A7, A8, ...) \
+#define ___MENUMS_EXPAND(LUTYPE, A1, A2, A3, A4, A5, A6, A7, A8, ...) \
 { \
-  static volatile typeof(ENUMID) mkenumstr_ofenumIdType; \
+  /*static volatile typeof(ENUMID) mkenumstr_ofenumIdType; */\
   static volatile struct mkenumstr_descr_s mkenumstr_job = \
   { \
-    .enumid = STRINGIFY(ENUMID), \
+    .enumid = STRINGIFY("ENUMID"), \
     .lutype = LUTYPE, \
-    .func = __func__, \
-    .file = __FILE__, \
-    .linenr = __LINE__, \
+    .funcname = __func__, \
+    .filename = __FILE__, \
+    .filelinenr = __LINE__, \
     .args = \
     { \
       STRINGIFY(A1), \
@@ -94,20 +91,21 @@ void mkenumstr_hideunused(volatile struct mkenumstr_descr_s * x, void* y)
       STRINGIFY(A8) \
     } \
   }; /* MKENUMS_JOIN(___mkenums_job_, __LINE__); */ \
-  mkenumstr_hideunused(&mkenumstr_job, (void*) &mkenumstr_ofenumIdType);\
+  /*mkenumstr_hideunused(&mkenumstr_job, (void*) &mkenumstr_ofenumIdType); */\
+  mkenumstr_hideunused(&mkenumstr_job, NULL); \
   return NULL; \
 }
 
 #define MENUS_VAARGS(...)  __VA_ARGS__ "", "", "", "", "", "", "", ""
 
 
-#define ___MENUS_VALUE2STR(...)  ___MENUMS_EXPAND(\
+#define MENUS_VALUE2STR(...)  ___MENUMS_EXPAND(\
   "VALUE2STR", \
-  __VA_ARGS__ \
+  ##__VA_ARGS__, \
   "", "", "", "", "", "", "", "")
 
 
-#define MENUS_VALUE2STR(...) ___MENUS_VALUE2STR(__VA_ARGS__)
+#define __MENUS_VALUE2STR(...) ___MENUS_VALUE2STR(__VA_ARGS__)
 
 #define MENUS_BITFLAG2STR(...) ___MENUMS_EXPAND(\
   "BITFLAG2STR", \

@@ -13,21 +13,14 @@ class BadExprException(Exception):
         self.msg = msg
 
     def __str__(self):
-        return '{}()'.format(self.__class__.__name__, self.msg)
+        return '{}({})'.format(self.__class__.__name__, self.msg)
 
 
 def isCStr(s):
     return s.startswith('"') and s.endswith('"')
 
 def stripCStr(s):
-    return s[1:-1]
-
-def stripAssumedCStr(s):
-    if s.startswith('"') and s.endswith('"'):
-        return s[1:-1]
-    else:
-        raise BadExprException('refmt assumed c string')
-
+    return s[1:-1] if isCStr(s) else s
 
 class CCodeGen(object):
     def __init__(self, job):
@@ -81,12 +74,12 @@ class CCodeGen(object):
         s += ' * @brief {}\n'.format(brief)
         s += ' * @note  Do not modify! Auto generated code.\n'
         s += ' * @param {} - {}\n'.format(prmname, param)
-        for k, v in job.meta.items():
+        for k, v in job.props.items():
             if v:
                 s += ' *    {}: {}\n'.format(k, v) #FIXME escape c '*/' etc
         s += ' */\n'
 
-        m = job.meta
+        m = job.props
         s += '{} {}({} {})\n'.format(
                 m['funcrettype'], m['funcname'], m['funcprmtype'], prmname)
         s += '{\n'
@@ -121,13 +114,13 @@ class EnumStrReformat(object):
 
     def findcommonxfix(self, x, enums, maxunmatch=1, minlen=2):
         if x == 'pre':
-            return self.findCommonPrefix(enums, maxunmatch, minlen)
+            return self.findcommonprefix(enums, maxunmatch, minlen)
         elif x == 'suf':
-            return self.findCommonSuffix(enums, maxunmatch, minlen)
+            return self.findcommonsuffix(enums, maxunmatch, minlen)
         else:
             raise KeyError
 
-    def findCommonPrefix(self, enums, maxunmatch=1, minlen=2):
+    def findcommonprefix(self, enums, maxunmatch=1, minlen=2):
         '''Given a list of strings, returns the longest common string,
         ignoring max N unmatched strings set by param, or empty string
         '''
@@ -156,6 +149,9 @@ class EnumStrReformat(object):
             res = ''
         return res
 
+    def findcommonsuffix(self, enums, maxunmatch=1, minlen=2):
+        raise NotImplementedError('TODO')
+
     def replace(self, enums, findexpr, replacewith=''):
         reobj = re.compile(findexpr)
         r = {reobj.sub(replacewith, k): v for (k, v) in enums.iteritems()}
@@ -164,12 +160,12 @@ class EnumStrReformat(object):
 
 
 class EnumStrJob(object):
-    def __init__(self, toks=[], meta={}, asbitflags=False):
+    def __init__(self, toks=[], props={}, asbitflags=False):
         #self._refmtfuncs = []
         self.refmt = EnumStrReformat()
         self.codegen = CCodeGen(self)
         self.asbitflags = asbitflags
-        self.meta = meta
+        self.props = props
         self.fromtype = None
         self.usedefs = True #TOTO
         self.toks = toks
@@ -177,16 +173,16 @@ class EnumStrJob(object):
         self.enumrepr = {}
 
         self._parsers = {
-            'fromtype' :   self.parse_fromtype,
-            'reformat' :   self.parse_reformat,
-            'sansprefix' : self.parse_sansprefix,
-            'sanssuffix' : self.parse_sanssuffix,
+            'fromtype' :   self.__parse_fromtype,
+            'reformat' :   self.__parse_reformat,
+            'sansprefix' : self.__parse_sansprefix,
+            'sanssuffix' : self.__parse_sanssuffix,
         }
         #need type argument know, format args parsed later when we have the enum
-        self.parse(self.toks, selfunc='fromtype')
+        self._parse_toks(self.toks, selfunc='fromtype')
 
         if not self.fromtype:
-            self.fromtype = meta['funcprmtype']
+            self.fromtype = props['funcprmtype']
 
     def __str__(self):
         return str(self.toks)
@@ -196,7 +192,7 @@ class EnumStrJob(object):
             log.error("no defs")
             #raise KeyError # FIXME log.warning('No defs for {}'.format(job))
             return
-        self.parse(self.toks)
+        self._parse_toks(self.toks)
         self._prepareRepr()
         return self.codegen.get()
 
@@ -214,10 +210,10 @@ class EnumStrJob(object):
                  duplicates += 1
             else:
                 self.enumrepr[val] = name
-        self.meta['duplicates'] = duplicates
+        self.props['duplicates'] = duplicates
 
 
-    def parse_fromtype(self, args):
+    def __parse_fromtype(self, args):
         if len(args) != 1:
             msg = ' accepts 1 arguments but {} given'.format(len(args))
             raise BadExprException(msg)
@@ -229,7 +225,7 @@ class EnumStrJob(object):
             self.fromtypeexposed = True
         self.fromtype = atype
 
-    def parse_reformat(self, args):
+    def __parse_reformat(self, args):
         if len(args) != 2:
             msg = 'reformat accepts 2 arguments but {} given'.format(len(args))
             raise BadExprException(msg)
@@ -240,7 +236,7 @@ class EnumStrJob(object):
             prms.append(stripCStr(arg))
         self.refmt.addFmt(self.refmt.replace, prms)
 
-    def _parse_sansxfix(self, x, args):
+    def __parse_sansxfix(self, x, args):
         if x == 'pre':
             refindfmt = '^{}'
         elif x == 'suf':
@@ -257,7 +253,7 @@ class EnumStrJob(object):
                     raise BadExprException(str(e))
 
             xfix = self.refmt.findcommonxfix(x, self.enumdefs, *findprms)
-            self.meta['common_{}fix_found'.format(x)] = xfix
+            self.props['common_{}fix_found'.format(x)] = xfix
             if not xfix:
                 log.warning('No %sfix found', xfix)
                 return
@@ -271,39 +267,35 @@ class EnumStrJob(object):
                 prms = [refindfmt.format(stripCStr(arg)), '']
                 self.refmt.addFmt(self.refmt.replace, prms)
 
-    def parse_sansprefix(self, args):
-        return self._parse_sansxfix('pre', args)
+    def __parse_sansprefix(self, args):
+        return self.__parse_sansxfix('pre', args)
 
-    def parse_sanssuffix(self, args):
-        return self._parse_sansxfix('suf', args)
+    def __parse_sanssuffix(self, args):
+        return self.__parse_sansxfix('suf', args)
 
-    def parse(self, toks, selfunc=None):
+    def _parse_toks(self, toks, selfunc=None):
         for tok in toks:
             if len(tok) == 0:
                 continue
-            self.parsetok(tok, selfunc)
+            if selfunc is not None:
+                assert(selfunc in self._parsers)
+            m = re.search(r'(.*?)\((.*?)\)', str(tok))
+            if not m:
+                msg = 'Failed to parse "{}"'.format(tok)
+                raise BadExprException(msg)
+            func = m.group(1)
+            args = m.group(2).split(',')
+            #args = [a.strip() for a in args]
+            args = map(lambda a: a.strip(), args)
+            args = filter(len, args) #remove empty
 
-    def parsetok(self, tok, selfunc=None):
-        if selfunc is not None:
-            assert(selfunc in self._parsers)
-
-        m = re.search(r'(.*?)\((.*?)\)', str(tok))
-        if not m:
-            msg = 'Failed to parse "{}"'.format(tok)
-            raise BadExprException(msg)
-        func = m.group(1)
-        args = m.group(2).split(',')
-        #args = [a.strip() for a in args]
-        args = map(lambda a: a.strip(), args)
-        args = filter(len, args) #remove empty
-
-        if func in self._parsers:
-            if selfunc is None or selfunc == func:
-                log.debug('parsing %s', func)
-                self._parsers[func](args)
-        else:
-            msg = 'unknown keyword or function "{}"'.format(tok)
-            raise BadExprException(msg)
+            if func in self._parsers:
+                if selfunc is None or selfunc == func:
+                    log.debug('parsing %s', func)
+                    self._parsers[func](args)
+            else:
+                msg = 'unknown keyword or function "{}"'.format(tok)
+                raise BadExprException(msg)
 
 
 import unittest

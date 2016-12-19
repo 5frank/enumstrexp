@@ -6,14 +6,15 @@ SCRIPTPATH=$(dirname "$SCRIPT")
 SHELL_ARGS="$@"; #$(echo $@ | tr -d ' ')
 
 
+PROG_NAME="main"
 
 echo " ----------- GCC: ------------ "
 PROG_NAME=main
-gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g3 -ggdb -std=gnu99 -Wall \
+gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g -g3 -ggdb -std=gnu99 -Wall \
 -export-dynamic -fvisibility=hidden -fno-eliminate-unused-debug-types \
 -I "$SCRIPTPATH" \
 -I "$SCRIPTPATH/../test/" \
--I "$SCRIPTPATH/../test/codegen" 
+-I "$SCRIPTPATH/../test/codegen"
 #-Wtraditional-conversion
 #-Wconversion
 #nm |
