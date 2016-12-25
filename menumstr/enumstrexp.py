@@ -112,7 +112,7 @@ def findEnumDefs(jobs, symbfile):
 def getJobs(exefile, addresses):
     jobs = []
     for addr in addresses:
-        cfg = gdbtoolz.getStructAsDict(addr, 'struct mkenumstr_descr_s')
+        cfg = gdbtoolz.getStructAsDict(addr, 'struct mkenumstr_job_s')
         cfg = byteify(cfg) # python < 3 no unicode. extra sanity
         rettype, prmtype = gdbtoolz.getFuncIOTypes(cfg['funcname'])
         cfg['funcrettype'] = rettype
@@ -123,11 +123,20 @@ def getJobs(exefile, addresses):
 
     return jobs
 
+def fullrelpath(p):
+    #if os.path.isabs(p):
+    #return p
+    thisdir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(thisdir, p)
+
 def cCompile(includes=[]):
     #import tempfile
     #tempfile.mkdtemp
+    ifile = fullrelpath('main.c')
+    ofile = fullrelpath('main.o')
+    incl = fullrelpath('menumstr.h')
 
-    cmd = ['gcc', '-o', config.INIT_SYMFILE, 'main.c',
+    cmd = ['gcc', '-o', ofile, ifile,
     '-O0', '-g3', '-ggdb', '-std=gnu99', '-Wall',
     '-fno-eliminate-unused-debug-types']
 
@@ -156,6 +165,7 @@ def getLauncherVar(varname):
     ev = str(gdb.parse_and_eval(varname))
     ev = ev[1:-1] # remove quotes added
     return ev
+
 
 from pprint import pprint
 import shlex

@@ -62,6 +62,8 @@
 
 typedef const char * (*menums_bftostrluf) (unsigned int bitpos);
 
+#define MENUMS_STR_SIZE_MAX(FUNC) FUNC #
+
 ssize_t menums_bitstostr(char * str, size_t size, unit32_t flags);
 ssize_t menums_bitstostr(char * str, size_t size, unsigned int flags, menums_bftostrluf)
 {

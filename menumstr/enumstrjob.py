@@ -178,6 +178,19 @@ class EnumStrJob(object):
             'sansprefix' : self.__parse_sansprefix,
             'sanssuffix' : self.__parse_sanssuffix,
         }
+        '''
+        self._typeparsers = {
+            'fromtype' :   self.__parse_fromtype,
+        }
+
+        self._refmtparsers = {
+            'reformat' :   self.__parse_reformat,
+            'sansprefix' : self.__parse_sansprefix,
+            'sanssuffix' : self.__parse_sanssuffix,
+        }
+
+        self._unparsedtoks = toks
+        '''
         #need type argument know, format args parsed later when we have the enum
         self._parse_toks(self.toks, selfunc='fromtype')
 
@@ -211,7 +224,6 @@ class EnumStrJob(object):
             else:
                 self.enumrepr[val] = name
         self.props['duplicates'] = duplicates
-
 
     def __parse_fromtype(self, args):
         if len(args) != 1:

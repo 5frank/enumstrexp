@@ -14,13 +14,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
-
 #include <stdio.h>
 #include <stdarg.h>
-#include "enumstr.h"
 
 
 int main(int argc, char *argv[])
 {
-  
+
 }

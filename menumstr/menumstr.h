@@ -3,129 +3,39 @@
 #ifndef MKENUMSTR_INCLUDE_H_
 #define MKENUMSTR_INCLUDE_H_
 
-
-#define STRINGIFY(X) ___STRINGIFY_VIA(X)
+#define MKENUMSTR_STRINGIFY(X) ___MKENUMSTR_STRINGIFY_VIA(X)
 /// Via expand macro. No parent
-#define ___STRINGIFY_VIA(X) #X
+#define ___MKENUMSTR_STRINGIFY_VIA(X) #X
 
-
-#define MKENUMS_JOIN(A, B) A # B
-
-#if 1 //def MKENUMSTR_COMPILE
-/*
-enum mkenumstr_oflags_e
+struct mkenumstr_job_s
 {
-  O_NODEPS = 1u<<1, // no dependencies on original file or definition
-  O_BITFLAGS = 1u<<2,
-  O_LSTRIP_COMMON = 1u<<3,
-  O_RSTRIP_COMMON = 1u<<4,
-  O_JOIN_DUPLS = 1u<<5,
-  O_TO_LOWER = 1u<<6,
-  O_TO_UPPER = 1u<<7
+  //const char * enums;
+
+  const char * meta_func;
+  const char * meta_file;
+  unsigned int meta_line;
+
+  const char * name_strip;
+  const char * name_excl;
+  unsigned int name_join;
+  const char * name_joinsep;
+  const char * name_default;
+
+  unsigned int inst_join;
+  unsigned int use_bitindex;
 };
 
-struct mkenumstr_descr_s
-{
-  const char * enumid;
-  const char * resub;
-  const char * func;
-  const char * file;
-  unsigned int oflags;
-  unsigned int linenr;
-}; */
-
-
-
-/*mkenumstr_ofenumIdType -
-if enum type and not string, this is a hint to compiler
-to have it accesible in symbol table  */
-/*
-#define MKENUMSTR_FUNC(ENUMID, OFLAGS, RESUB, ...) { \
-  static volatile typeof(ENUMID) mkenumstr_ofenumIdType; \
-  static volatile struct mkenumstr_descr_s mkenumstr_job = \
-  { \
-    .enumid = STRINGIFY(ENUMID), \
-    .resub = RESUB, \
-    .func = __func__, \
-    .file = __FILE__, \
-    .oflags = OFLAGS, \
-    .linenr = __LINE__ \
-  }\
-  mkenumstr_hideunused(&mkenumstr_job, (void*) &mkenumstr_ofenumIdType);\
-  return NULL; \
-}
-*/
-struct mkenumstr_descr_s
-{
-  const char * enumid;
-  const char * lutype;
-  const char * funcname;
-  const char * filename;
-  unsigned int filelinenr;
-  const char * args[8];
-}; /* MKENUMS_JOIN(___mkenums_job_, __LINE__); */
-
-
-void mkenumstr_hideunused(volatile struct mkenumstr_descr_s * x, void* y)
-{}
-
-#define ___MENUMS_EXPAND(LUTYPE, A1, A2, A3, A4, A5, A6, A7, A8, ...) \
+#define MKENUMSTR(FUNC_NAME, ENUM_TYPE, ...) \
 { \
-  /*static volatile typeof(ENUMID) mkenumstr_ofenumIdType; */\
-  static volatile struct mkenumstr_descr_s mkenumstr_job = \
+  static volatile struct mkenumstr_job_s mkenumsstr_job = \
   { \
-    .enumid = STRINGIFY("ENUMID"), \
-    .lutype = LUTYPE, \
-    .funcname = __func__, \
-    .filename = __FILE__, \
-    .filelinenr = __LINE__, \
-    .args = \
-    { \
-      STRINGIFY(A1), \
-      STRINGIFY(A2), \
-      STRINGIFY(A3), \
-      STRINGIFY(A4), \
-      STRINGIFY(A5), \
-      STRINGIFY(A6), \
-      STRINGIFY(A7), \
-      STRINGIFY(A8) \
-    } \
-  }; /* MKENUMS_JOIN(___mkenums_job_, __LINE__); */ \
-  /*mkenumstr_hideunused(&mkenumstr_job, (void*) &mkenumstr_ofenumIdType); */\
-  mkenumstr_hideunused(&mkenumstr_job, NULL); \
-  return NULL; \
+    .enums = MKENUMSTR_STRINGIFY(ENUM_TYPE), \
+    .meta_func = MKENUMSTR_STRINGIFY(FUNC_NAME), \
+    .meta_file = __FILE__, \
+    .meta_line = __LINE__, \
+    __VA_ARGS__ \
+ }; \
+  return mkenumsstr_job.name_default ? mkenumsstr_job.name_default : "\?\?"; \
 }
-
-#define MENUS_VAARGS(...)  __VA_ARGS__ "", "", "", "", "", "", "", ""
-
-
-#define MENUS_VALUE2STR(...)  ___MENUMS_EXPAND(\
-  "VALUE2STR", \
-  ##__VA_ARGS__, \
-  "", "", "", "", "", "", "", "")
-
-
-#define __MENUS_VALUE2STR(...) ___MENUS_VALUE2STR(__VA_ARGS__)
-
-#define MENUS_BITFLAG2STR(...) ___MENUMS_EXPAND(\
-  "BITFLAG2STR", \
-  __VA_ARGS__ \
-  "", "", "", "", "", "", "", "")
-
-
-#else
-// TODO
-void * menums_default(int x)
-{
-  return NULL;
-}
-
-#define MENUS_VALUE2STR __attribute__ ((weak, alias("menums_default")));
-or
-#define MENUS_VALUE2STR { _Static_assert(<something)>...
-
-#endif /* MKENUMSTR_COMPILE */
-
-
 
 #endif /* MKENUMSTR_INCLUDE_H_ */

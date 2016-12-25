@@ -3,7 +3,6 @@ import os
 import logging
 import sys
 import config
-import argparse
 
 
 log = logging.getLogger(__file__)
@@ -15,39 +14,12 @@ logging.basicConfig(
     disable_existing_loggers=True)
 
 
-def cCompile(includes=[]):
-    #import tempfile
-    #tempfile.mkdtemp
 
-    # TODO safe tempfile
-    #gcc -o $PROG_NAME.o $PROG_NAME.c -lm -ldl -O0 -g3 -ggdb -std=gnu99 -Wall \
-    #-export-dynamic -fvisibility=hidden -fno-eliminate-unused-debug-types
-
-    #objName = os.path.filename(srcName) + '.o'
-    #src = os.path.abspath(p)
-    #srco = '/tmp/main.o'
-    cmd = ['gcc', '-o', config.INIT_SYMFILE, 'main.c',
-    '-O0', '-g3', '-ggdb', '-std=gnu99', '-Wall',
-    '-fno-eliminate-unused-debug-types']
-
-    for incldir in includes:
-        cmd.extend(['-I', os.path.abspath(incldir)])
-
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    (out, err) = p.communicate()
-    if p.returncode != 0:
-        log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
-        return None
-
-    return 0
-
-
-def startGdb(args=[]):
+def invokegdb(xpath, args=[]):
     #os.environ['SHELL_ARGS'] = str(args)
+    os.environ[config.ARGS_ENVVAR] = ' '.join(args)
 
-    cmd = ['gdb', '-n', '-silent', '-batch',
-        '-x', os.path.abspath('enumstrexp.py')
-    ]
+    cmd = ['gdb', '-n', '-silent', '-batch', '-x', xpath]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     (out, err) = p.communicate()
     if p.returncode != 0:
@@ -57,19 +29,18 @@ def startGdb(args=[]):
     return 0
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-I', '--searchdir',
-    type=str,
-    action='append',
-    help='Include directory')
-
-
 def main():
-    incs = [
+    thisdir = os.path.dirname(os.path.abspath(__file__))
+    gdbxpath = os.path.join(thisdir, 'enumstrexp.py')
+
+
+    args = [
     '-I', '../test',
     '-I', '../test/codegen',
     '-I', '.']
-    os.environ[config.ARGS_ENVVAR] = ' '.join(incs)
+
+    #args = sys.argv
+
     #incsfull = [os.path.abspath(p) for p in incs]
     #args, unknownargs = parser.parse_known_args()
     #args = parser.parse_args()
@@ -77,7 +48,8 @@ def main():
     #return
     #cCompile(args.searchdir)
 
-    startGdb(sys.argv)
+    invokegdb(gdbxpath, args)
 
 if __name__ == '__main__':
+
     main()
