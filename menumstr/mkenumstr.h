@@ -10,23 +10,26 @@
 #define MKENUMSTR_UNIQUE(FUNC_NAME) MKENUMSTR_UNIQUE_PASTE(mkenumstr__, FUNC_NAME)
 #define MKENUMSTR_UNIQUE_PASTE(A, B) A ## B
 
+struct mkenumstr_defaults_s
+{
+  const char * joindupsep;
+  const char * nameunknown;
+};
 struct mkenumstr_job_s
 {
-  const char * meta_file;
-  unsigned int meta_line;
+  const char * filename;
+  unsigned int fileline;
 
-  const char * func_name;
-  const char * func_prmt;
-  const char * find_expr;
+  const char * find;
+  const char * funcname;
+  const char * funcprmtype;
 
-  const char * name_strip;
-  const char * name_excl;
-  unsigned int name_join;
-  const char * name_joinsep;
-  const char * name_default;
+  const char * strstrip;
+  const char * exclude;
+  unsigned int joindup;
 
-  unsigned int defs_merge;
-  unsigned int use_bitindex;
+  unsigned int mergedefs;
+  unsigned int usebitpos;
 };
 
 
@@ -34,10 +37,10 @@ struct mkenumstr_job_s
 const char * FUNC_NAME(FUNC_PRMT x) { return "\?\?"; }; \
 static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(FUNC_NAME) = \
 { \
-  .func_name = MKENUMSTR_STRINGIFY(FUNC_NAME), \
-  .func_prmt = MKENUMSTR_STRINGIFY(FUNC_PRMT), \
-  .meta_file = __FILE__, \
-  .meta_line = __LINE__, \
+  .funcname = MKENUMSTR_STRINGIFY(FUNC_NAME), \
+  .funcprmtype = MKENUMSTR_STRINGIFY(FUNC_PRMT), \
+  .filename = __FILE__, \
+  .fileline = __LINE__, \
   __VA_ARGS__ \
 };
 

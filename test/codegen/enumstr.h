@@ -13,17 +13,22 @@
 #endif
 
 
-MKENUMSTR_FUNC(enumstr_myenum1, enum testenum_negjmp_e);
+MKENUMSTR_FUNC(enumstr_myenum1, enum testenum_negjmp_e,
+  .strstrip="^testenum_negjmp_", .exclude="_LAST");
+
+
+MKENUMSTR_FUNC(enumstr_myenum2, int,
+  .find="enum testenum_negjmp_");
 
 #if 0
-MKENUMSTR(enumstr_myenum3, int,
-    .find_expr="^syserr_*",
-    .name_excl = "^_",
-    .name_strip = "^syserr_",
-    .defs_merge = true
+MKENUMSTR_FUNC(enumstr_myenum3, int,
+    .find = "^syserr_*",
+    .exclude = "^_",
+    .strstrip = "^syserr_",
+    .mergedefs = true
 );
 
-MKENUMSTR(enumstr_myenum3, int, "^syserr_*",
+MKENUMSTR_FUNC(enumstr_myenum3, int, "^syserr_*",
     .name_excl = "^_",
     .name_strip = "^syserr_",
     .defs_merge = true

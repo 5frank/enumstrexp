@@ -12,14 +12,46 @@ enum testenum_simple_e
 /// negative valeus and jumps (i.e. not continous)
 enum testenum_negjmp_e
 {
-  testenum_negjmp_n33 = -33,
-  testenum_negjmp_n3 = -3,
-  testenum_negjmp_00 = 0,
-  testenum_negjmp_01 = 1,
-  testenum_negjmp_04 = 4,
-  testenum_negjmp_1337 = 1337,
+  testenum_negjmp_An33 = -33,
+  testenum_negjmp_Bn3 = -3,
+  testenum_negjmp_C00 = 0,
+  testenum_negjmp_D01 = 1,
+  testenum_negjmp_E04 = 4,
+  testenum_negjmp_F1337 = 1337,
   testenum_negjmp_LAST
 };
+typedef enum testenum_negjmp_e testenum_negjmp_t;
+
+enum
+{
+  anonEnum_A,
+  anonEnum_B,
+  anonEnum_C,
+};
+
+typedef enum
+{
+  noTagTypedef_A,
+  noTagTypedef_B,
+  noTagTypedef_C,
+} noTagTypedef_e;
+
+typedef enum tagAndTypedef_e
+{
+  tagAndTypedef_A,
+  tagAndTypedef_B,
+  tagAndTypedef_C,
+} tagAndTypedef_e;
+
+
+enum tagAndSepTypedef_e
+{
+  tagAndSepTypedef_A,
+  tagAndSepTypedef_B,
+  tagAndSepTypedef_C,
+};
+
+typedef enum tagAndSepTypedef_e tagAndSepTypedef_e;
 
 // fits in 32-bit
 enum testenum_flg32_e

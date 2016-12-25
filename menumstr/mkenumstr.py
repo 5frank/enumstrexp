@@ -14,6 +14,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%SZ",
     disable_existing_loggers=True)
 
+scriptDir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(scriptDir) #
+import envarg
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -48,12 +51,14 @@ def compileSymbolTable(ifile, includes=[]):
 
 
 
-def gdb_invokeMkJobs(ifile):
-    ifile = fullrelpath(ifile)
-    os.environ['MKENUMSTR_SYMB_FILE'] = ifile
+def gdb_invokeMkJobs(symbfile, ocfile, ohfile=None):
+    envarg.symbfile.set(fullrelpath(symbfile))
+    envarg.ocfile.set(fullrelpath(ocfile) if ocfile else None)
+    envarg.ohfile.set(fullrelpath(ohfile) if ohfile else None)
+    
     #os.environ['SHELL_ARGS'] = str(args)
     #os.environ[config.ARGS_ENVVAR] = ' '.join(args)
-    xpath=fullrelpath('jobparser.py')
+    xpath=fullrelpath('gdbmkenumstr.py')
     cmd = ['gdb', '-n', '-silent', '-batch', '-x', xpath]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     (out, err) = p.communicate()
@@ -103,7 +108,7 @@ def main():
         objfile = compileSymbolTable(ifile)
 
 
-        gdb_invokeMkJobs(objfile)
+        gdb_invokeMkJobs(objfile, args.ocfile, args.ohfile)
 
 
 if __name__ == '__main__':
