@@ -23,6 +23,7 @@ struct mkenumstr_job_s
   const char * find;
   const char * funcname;
   const char * funcprmtype;
+  unsigned int funcprmsize;
 
   const char * strstrip;
   const char * exclude;
@@ -39,6 +40,7 @@ static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(FUNC_NAME) = \
 { \
   .funcname = MKENUMSTR_STRINGIFY(FUNC_NAME), \
   .funcprmtype = MKENUMSTR_STRINGIFY(FUNC_PRMT), \
+  .funcprmsize = sizeof(FUNC_PRMT), \
   .filename = __FILE__, \
   .fileline = __LINE__, \
   __VA_ARGS__ \

@@ -3,6 +3,7 @@ import subprocess
 import re
 import sys
 import argparse
+import tempfile
 from pprint import pprint
 import logging
 log = logging.getLogger(__file__)
@@ -27,8 +28,17 @@ def compileSymbolTable(ifile, includes=[]):
     #import tempfile
     #tempfile.mkdtemp
     srcfile = fullrelpath('main.c')
-    objfile = fullrelpath('main.o')
+    #objfile = fullrelpath('main.o')
+    tmpf = tempfile.NamedTemporaryFile(
+            prefix='mkenumstr_tmpf_',
+            suffix='.o',
+            delete=False)
+    #fh.close()
 
+    #objfile = tmpfpath
+    objfile = tmpf.name
+
+    log.debug('Creating tmp symbol table %s', objfile)
     cmd = ['gcc', '-o', objfile, srcfile,
         '-O0', '-g', '-g3', '-ggdb', '-std=gnu99', '-Wall',
         '-D', 'MKENUMSTR_COMPILE',
@@ -55,7 +65,7 @@ def gdb_invokeMkJobs(symbfile, ocfile, ohfile=None):
     envarg.symbfile.set(fullrelpath(symbfile))
     envarg.ocfile.set(fullrelpath(ocfile) if ocfile else None)
     envarg.ohfile.set(fullrelpath(ohfile) if ohfile else None)
-    
+
     #os.environ['SHELL_ARGS'] = str(args)
     #os.environ[config.ARGS_ENVVAR] = ' '.join(args)
     xpath=fullrelpath('gdbmkenumstr.py')
@@ -103,13 +113,21 @@ parser.add_argument('-s', '--symboltable',
          'where enums can be found. assumes compiled with debug symbols')
 
 def main():
+
+    #tmpf = tempfile.NamedTemporaryFile(suffix='.mkenumstrtmp')
+    #tmpf.close()
+    #print (tmpf.name)
+    #return
+
     args = parser.parse_args()
     for ifile in args.ihfile:
         objfile = compileSymbolTable(ifile)
 
-
         gdb_invokeMkJobs(objfile, args.ocfile, args.ohfile)
+        log.debug('Removing temp file %s', objfile)
+        os.remove(objfile)
 
 
 if __name__ == '__main__':
+
     main()
