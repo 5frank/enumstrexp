@@ -1,6 +1,6 @@
 
 
-def fileIncludeGuard(start, fname):
+def includeGuardBegin(fname):
     suffix='_INCLUDE_GUARD'
     if fname:
         basename = os.path.basename(fname)
@@ -9,14 +9,14 @@ def fileIncludeGuard(start, fname):
         defname = str(fname)
 
     defname = defname.upper() + suffix
-    if start:
-        src = [
-            '#ifndef {}'.format(defname),
-            '#define {}'.format(defname),
-            '']
-    else:
-        src = ['#endif /* END include guard */', ''] #extra lb at end of file
+    src = [
+        '#ifndef {}'.format(defname),
+        '#define {}'.format(defname),
+        '']
     return src
+
+def includeGuardEnd():
+    return ['#endif /* END include guard */', ''] #extra lb at end of file
 
 def funcParamName(usebitpos=False):
     return 'bitpos' if usebitpos else 'value'

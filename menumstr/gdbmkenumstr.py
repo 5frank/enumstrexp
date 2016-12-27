@@ -252,96 +252,6 @@ def makeEnumRepr(emnumdefs, strstrip=None, exclude=None, **kwargs):
     return enumrepr
 
 
-def genFuncParamName(job):
-    usebitpos   = job['args']['usebitpos']
-    return 'bitpos' if usebitpos else 'value'
-
-def genFuncProto(job, prmname=None, withcomments=True, term=''):
-    funcname    = job['args']['funcname']
-    funcprmtype = job['args']['funcprmtype']
-    usebitpos   = job['args']['usebitpos']
-    if prmname is None:
-        prmname = genFuncParamName(job)
-
-    src = []
-    if usebitpos:
-        brief = 'Enum bit flag index to string lookup'
-        param = 'bit position index representing a enum flag. (LSB == 0)'
-    else:
-
-        brief = 'Enum value to string lookup.'
-        param = 'enum value.'
-
-    if withcomments:
-        src.extend([
-            '/**',
-            ' * @brief {}'.format(brief),
-            ' * @note  Do not modify! Auto generated code.',
-            ' * @param {} - {}\n'.format(prmname, param)
-        ])
-        #for k, v in job.propsrc.items():
-        #    if v: src.append(' *    {}: {}'.format(k, v)) #FIXME escape c '*/' etc
-        src.append(' */')
-
-    prototype = 'const char * {func}({prmtype} {prmname}){term}'.format(
-                        func=funcname,
-                        prmtype=funcprmtype,
-                        prmname=prmname,
-                        term=term)
-
-    src.append(prototype)
-
-    return src
-
-
-def genFuncSrc(job):
-    enumdefs    = job['enumdefs']
-    enumrepr    = job['enumrepr']
-    usebitpos   = job['args']['usebitpos']
-    usedefs     = True,
-    nameunknown = '??'
-    tabstyle    = '  '
-    xindent = ''
-    prmname = genFuncParamName(job)
-
-    src = genFuncProto(job, prmname, term='\n{')
-
-    tabs = lambda n : n * tabstyle
-    src.extend([
-        '{}switch({})'.format(tabs(1), prmname),
-        '{}{{'.format(tabs(1))# escpae '{' with '{{'
-    ])
-
-    excluded = []
-    for defname in sorted(enumdefs, key=enumdefs.get): # sor by value
-        strname = enumrepr[defname]
-        if strname is None:
-            excluded.append(defname)
-            continue
-        caselbl = defname if usedefs else int(enumdefs[defname])
-        if usebitpos: caselbl = 'BITPOS32({})'.format(caselbl)
-
-        src.extend([
-            '{}case {}:'.format(tabs(2), caselbl),
-            '{}return {}"{}";'.format(tabs(3), xindent, strname)
-        ])
-
-    for defname in excluded:
-        caselbl = defname if usedefs else int(enumdefs[defname])
-        src.extend([
-            '{}case {}: /* excluded */'.format(tabs(2), caselbl)
-        ])
-
-    src.extend([
-        '{}default:'.format(tabs(2)),
-        '{}return "{}";'.format(tabs(2), nameunknown),
-        '{}}}'.format(tabs(1)) # escpae '}' with '}}'
-    ])
-    # ---- END switch case -----
-    src.append('}')
-    return src
-
-
 def parseInitJobs(symbfile, jobk):
     addresses = nm_findInstances(symbfile, 'mkenumstr__')
     gdb_loadSymbols(symbfile)
@@ -361,20 +271,6 @@ def export(srcfile, srclines):
     with open(srcfile,'w') as fh: #auto close
             fh.write(srcstr)
 
-def genIncludeGuard(fname):
-    if fname:
-        basename = os.path.basename(fname)
-        defname = basename.replace('.', '_')
-    else:
-        defname = str(fname)
-
-    defname = defname.upper() + '_INCLUDE_GUARD'
-    src = [
-        '#ifndef {}'.format(defname),
-        '#define {}'.format(defname),
-        ''
-    ]
-    return src
 
 def main():
     print ('---- {} ----'.format(__file__))
@@ -385,15 +281,13 @@ def main():
     jobs = parseInitJobs(symbfile, 'args')
     oclines = []
     ohlines = []
-    ohlines.extend(genIncludeGuard(ohfile))
+    ohlines.extend(codegen.includeGuardBegin(ohfile))
 
     for job in jobs:
         args = job['args']
         gdbexpr = args['find'] if args['find'] else args['funcprmtype']
         enumdefs, defsrcfile = findenums(gdbexpr)
         enumrepr = makeEnumRepr(enumdefs, **args)
-        #job['enumdefs']   = enumdefs
-        #job['enumrepr']   = makeEnumRepr(job)
 
         kvcomments = args
         kvcomments['defsrcfile'] = defsrcfile
@@ -401,16 +295,12 @@ def main():
         ohlines.extend(
             codegen.funcPrototype(kvcomments=kvcomments, term=';\n', **args))
 
-
         oclines.extend(
             codegen.funcPrototype(kvcomments=kvcomments, term='\n{', **args))
         oclines.extend(
             codegen.funcSourceBody(enumdefs, enumrepr, **args))
 
-
-        #oclines.extend(genFuncSrc(job))
-
-    ohlines.extend(['#endif', ''])
+    ohlines.extend(codegen.includeGuardEnd())
 
     #pprint(jobs)
     #pprint(oclines)
