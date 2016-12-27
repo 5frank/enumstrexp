@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #include <mkenumstr.h>
-#include "../testenums.h"
+#include "../testdefs.h"
 
 #ifndef MKENUMSTR_COMPILE
 #error "undef wtf?"

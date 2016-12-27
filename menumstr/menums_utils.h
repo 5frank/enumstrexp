@@ -27,6 +27,7 @@
   ___MSKCMP(X, 24) ___MSKCMP(X, 25) ___MSKCMP(X, 26) ___MSKCMP(X, 27) \
   ___MSKCMP(X, 28) ___MSKCMP(X, 29) ___MSKCMP(X, 30) ___MSKCMP(X, 31) \
   MENUMS_BITPOS_ERROR)
+
 /* ensure single bit set or 'duplicate case value' -
   assuming case ENUMSTR_BAD_FLAG_VAL: handled as default */
 #define MENUMS_BITPOS64(X) ( \
@@ -93,7 +94,7 @@ ssize_t menums_bitstostr(char * str, size_t size, unsigned int flags, menums_bft
 #define ENUMSTR_FLGS(STRBUF, TOSTREXPR, FLAGS) \
 ({
   char * ___buf = (STRBUF);
-  unsigned int ___flgs = (FLAGS);
+  unsigned typeof(FLAGS) ___flgs = (FLAGS);
   unsigned int ___i;
   for (___i = 0; ___i < (sizeof(___flgs) * CHAR_BIT); ___i++)
   {

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os
 import subprocess
 import re
@@ -25,18 +26,23 @@ def fullrelpath(p):
     return os.path.join(THIS_DIR, p)
 
 def compileSymbolTable(ifile, includes=[]):
-    #import tempfile
-    #tempfile.mkdtemp
-    srcfile = fullrelpath('main.c')
+    TMP_FILE_PREFIX = 'mkenumstr_tmpfile_'
+    #srcfile = fullrelpath('main.c')
     #objfile = fullrelpath('main.o')
-    tmpf = tempfile.NamedTemporaryFile(
-            prefix='mkenumstr_tmpf_',
+    tmpc = tempfile.NamedTemporaryFile(
+            prefix=TMP_FILE_PREFIX,
+            suffix='.c',
+            delete=False)
+    srcfile = tmpc.name
+
+    tmpo = tempfile.NamedTemporaryFile(
+            prefix=TMP_FILE_PREFIX,
             suffix='.o',
             delete=False)
-    #fh.close()
+    objfile = tmpo.name
 
-    #objfile = tmpfpath
-    objfile = tmpf.name
+    with open(srcfile,'w') as fh: #auto close
+            fh.write('int main(void) { return 0; }')
 
     log.debug('Creating tmp symbol table %s', objfile)
     cmd = ['gcc', '-o', objfile, srcfile,
@@ -55,11 +61,11 @@ def compileSymbolTable(ifile, includes=[]):
     (out, err) = p.communicate()
     if p.returncode != 0:
         log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
-        return None
+        objfile = None
 
+    log.debug('Removing temp srcfile %s', srcfile)
+    os.remove(srcfile)
     return objfile
-
-
 
 def gdb_invokeMkJobs(symbfile, ocfile, ohfile=None):
     envarg.symbfile.set(fullrelpath(symbfile))
@@ -75,9 +81,8 @@ def gdb_invokeMkJobs(symbfile, ocfile, ohfile=None):
     if p.returncode != 0:
         log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
         return None
-    print (out)
+    print(out.decode('ascii')) #py3 as subprocess return bytes not str
     return p.returncode
-
 
 
 parser = argparse.ArgumentParser()
@@ -113,11 +118,6 @@ parser.add_argument('-s', '--symboltable',
          'where enums can be found. assumes compiled with debug symbols')
 
 def main():
-
-    #tmpf = tempfile.NamedTemporaryFile(suffix='.mkenumstrtmp')
-    #tmpf.close()
-    #print (tmpf.name)
-    #return
 
     args = parser.parse_args()
     for ifile in args.ihfile:

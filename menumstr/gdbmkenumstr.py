@@ -1,3 +1,4 @@
+#from __future__ import print_function
 import gdb
 import os
 import logging
@@ -9,15 +10,15 @@ from pprint import pprint
 scriptDir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(scriptDir) #
 import envarg
+import codegen
 
 log = logging.getLogger(os.path.basename(__file__))
 
 logging.basicConfig(
     level=logging.DEBUG,
     stream=sys.stdout,
-    format='%(asctime)s:%(levelname)s:%(name)s:%(lineno)04d: %(message)s',
-    datefmt="%Y-%m-%dT%H:%M:%SZ",
-    disable_existing_loggers=True)
+    format='%(levelname)s:%(name)s:%(lineno)04d: %(message)s',
+    disable_existing_loggers=False)
 
 def isCStr(s):
     return s.startswith('"') and s.endswith('"')
@@ -52,7 +53,6 @@ def gdb_isEnumType(t):
     ts = t.strip_typedefs()
     if ts.code == gdb.TYPE_CODE_ENUM: return True
     return False
-
 
 def gdb_getStructDict(addr, structtype, scope=''):
     try:
@@ -201,7 +201,7 @@ def findenums(findexpr, mergedefs=False):
         btypename = btype.tag if btype.tag is not None else btype.name
         assert(btypename)
         if btypename in enumsfound:
-            log.debug('duplicate defs of "%s"', btypename)
+            log.debug('duplicate defs of "%s"', str(btypename))
             continue # TODO compare dups?
         enumdefs = gdb.types.make_enum_dict(btype)
         enumsfound[btypename] = (enumdefs, defsrcfile)
@@ -224,12 +224,9 @@ def findenums(findexpr, mergedefs=False):
         raise LookupError
 
 
-def makeEnumRepr(job, joindupsep='=='):
-    strstrip  = job['args']['strstrip']
-    exclude   = job['args']['exclude']
-    emnumdefs = job['enumdefs']
+def makeEnumRepr(emnumdefs, strstrip=None, exclude=None, **kwargs):
 
-    log.debug(emnumdefs)
+    #log.debug(emnumdefs)
 
     if strstrip is not None:
         restrip = re.compile(strstrip)
@@ -259,11 +256,12 @@ def genFuncParamName(job):
     usebitpos   = job['args']['usebitpos']
     return 'bitpos' if usebitpos else 'value'
 
-def genFuncProto(job, prmname, withcomments=True, term=''):
+def genFuncProto(job, prmname=None, withcomments=True, term=''):
     funcname    = job['args']['funcname']
     funcprmtype = job['args']['funcprmtype']
     usebitpos   = job['args']['usebitpos']
-    prmname = genFuncParamName(job)
+    if prmname is None:
+        prmname = genFuncParamName(job)
 
     src = []
     if usebitpos:
@@ -354,6 +352,30 @@ def parseInitJobs(symbfile, jobk):
 
     return jobs
 
+def export(srcfile, srclines):
+    if not srcfile:
+        for line in srclines: print(line)
+        return
+    srcstr = '\n'.join(srclines)
+    log.info('Writing source file %s', srcfile)
+    with open(srcfile,'w') as fh: #auto close
+            fh.write(srcstr)
+
+def genIncludeGuard(fname):
+    if fname:
+        basename = os.path.basename(fname)
+        defname = basename.replace('.', '_')
+    else:
+        defname = str(fname)
+
+    defname = defname.upper() + '_INCLUDE_GUARD'
+    src = [
+        '#ifndef {}'.format(defname),
+        '#define {}'.format(defname),
+        ''
+    ]
+    return src
+
 def main():
     print ('---- {} ----'.format(__file__))
     symbfile = envarg.symbfile.get()
@@ -363,29 +385,39 @@ def main():
     jobs = parseInitJobs(symbfile, 'args')
     oclines = []
     ohlines = []
+    ohlines.extend(genIncludeGuard(ohfile))
 
     for job in jobs:
         args = job['args']
         gdbexpr = args['find'] if args['find'] else args['funcprmtype']
-        emnumdefs, defsrcfile = findenums(gdbexpr)
+        enumdefs, defsrcfile = findenums(gdbexpr)
+        enumrepr = makeEnumRepr(enumdefs, **args)
+        #job['enumdefs']   = enumdefs
+        #job['enumrepr']   = makeEnumRepr(job)
 
-        job['meta']['defsrcfile'] = defsrcfile
-        job['enumdefs']   = emnumdefs
-        job['enumrepr']   = makeEnumRepr(job)
-        oclines.extend(genFuncSrc(job))
+        kvcomments = args
+        kvcomments['defsrcfile'] = defsrcfile
 
-    pprint(jobs)
+        ohlines.extend(
+            codegen.funcPrototype(kvcomments=kvcomments, term=';\n', **args))
+
+
+        oclines.extend(
+            codegen.funcPrototype(kvcomments=kvcomments, term='\n{', **args))
+        oclines.extend(
+            codegen.funcSourceBody(enumdefs, enumrepr, **args))
+
+
+        #oclines.extend(genFuncSrc(job))
+
+    ohlines.extend(['#endif', ''])
+
+    #pprint(jobs)
     #pprint(oclines)
     log.debug('ocfile:%s, ohfile: %s', ocfile, ohfile)
 
-    if ocfile is not None:
-        ocstr = '\n'.join(oclines)
-        log.debug('Writing to file')
-        with open(ocfile,'w') as fh: #auto close
-                fh.write(ocstr)
-    else:
-        pprint(oclines)
-
+    export(ocfile, oclines)
+    export(ohfile, ohlines)
 
 
 
