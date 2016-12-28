@@ -1,8 +1,15 @@
 import random
 import string
+import os
 
 TABSTYLE = '  '
 tabs = lambda n : n * TABSTYLE
+
+def fileComments(kvcomments=None):
+    srclines = [
+    '/** AUTO GENERATED CODE BY MKENUMSTR */'
+    ]
+    return srclines
 
 def includeDirectives(filelist, defundef=[]):
     definelines = []
@@ -18,7 +25,7 @@ def includeDirectives(filelist, defundef=[]):
         include = '#include "{}"'.format(inclfile)
         if defundef:
             srclines.extend(definelines)
-            srclines.extend(include)
+            srclines.append(include)
             srclines.extend(undefineslines)
         else:
             srclines.append(include)
@@ -83,15 +90,24 @@ def includeGuardEnd():
 def funcParamName(usebitpos=False):
     return 'bitpos' if usebitpos else 'value'
 
-def funcPrototype(funcname, funcprmtype,
-                prmname=None,
-                kvcomments={},
-                usebitpos=False, withcomments=True, term='', **kwargs):
+def funcPrototype(funcname, funcprmtype, usebitpos=False, term='', **kwargs):
+    prmname = funcParamName(usebitpos)
+    prototype = 'const char * {func}({prmtype} {prmname}){term}'.format(
+                        func=funcname,
+                        prmtype=funcprmtype,
+                        prmname=prmname,
+                        term=term)
 
-    if prmname is None:
-        prmname = funcParamName(usebitpos)
+    return [prototype]
 
+
+def singlelineComment(comment, tablevel=0):
+    return ['{}/*{}*/'.format(tabs(tablevel), comment)]
+
+def funcDoxyComment(details={}, usebitpos=False, **kwargs):
     src = []
+    prmname = funcParamName(usebitpos)
+
     if usebitpos:
         brief = 'Enum bit flag index to string lookup'
         param = 'bit position index representing a enum flag. (LSB == 0)'
@@ -99,56 +115,53 @@ def funcPrototype(funcname, funcprmtype,
 
         brief = 'Enum value to string lookup.'
         param = 'enum value.'
+    src.extend([
+        '/**',
+        ' * @brief {}'.format(brief),
+        ' * @note  Auto generated code.',
+        ' * @param {} - {}'.format(prmname, param)
+    ])
 
-    if withcomments:
-        src.extend([
-            '/**',
-            ' * @brief {}'.format(brief),
-            ' * @note  Do not modify! Auto generated code.',
-            ' * @param {} - {}'.format(prmname, param)
-        ])
-        for k, v in kvcomments.items():
-            if v:
-                #TODO escape c '*/' etc
-                #sk = k.replace.('*/',
-                src.append(' *    {}: {}'.format(k, v))
-
-        src.append(' */')
-
-    prototype = 'const char * {func}({prmtype} {prmname}){term}'.format(
-                        func=funcname,
-                        prmtype=funcprmtype,
-                        prmname=prmname,
-                        term=term)
-
-    src.append(prototype)
-
+    if details:
+        src.append(' * @details')
+        for tag, comment in details.items():
+            src.append(' *   {} {}'.format(tag, comment))
+    src.append(' */')
     return src
 
 
-def funcSourceBody(enumdefs, enumrepr, funcname, funcprmtype,
-        usedefs=True, usebitpos=False, funcprmsize=4,
-        nameunknown='\\?\\?', **kwargs):
-    xindent = ''
+def multilineComment(comments=[],tablevel=0, compact=True):
+    #s = '{}/* '.format(tabs(tablevel))
+    #for cm in comments:
+    #    s += '{}* {}'.format(tabs(tablevel), cm))
+    #commentlines = ['{}* {}'.format(tabs(tablevel), x) for x in comments]
+    tabstr = tabs(tablevel)
+    joinsep = '\n{} * '.format(tabstr)
+    return ['{}/* {} */'.format(tabstr, joinsep.join(comments))]
+    #return src
+
+def funcDefBegin(usebitpos=False, funcprmsize=4, **kwargs):
     prmname = funcParamName(usebitpos)
-    src = []
+    src = ['{']
     if usebitpos:
         src.extend(bitposMacroDefine(funcprmsize))
-
-    def caselblfmt(defname):
-        r = defname if usedefs else int(enumdefs[defname])
-        if usebitpos:
-            return bitposMacroCaseLbl(defname)
-        else:
-            return r
 
     src.extend([
         '{}switch({})'.format(tabs(1), prmname),
         '{}{{'.format(tabs(1))# escpae '{' with '{{'
     ])
+    return src
+
+
+def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
+    src = []
+    xindent = ''
+    def caselblfmt(defname):
+        label = defname if usedefs else int(enumdefs[defname])
+        return bitposMacroCaseLbl(label) if usebitpos else label
 
     excluded = []
-    for defname in sorted(enumdefs, key=enumdefs.get): # sor by value
+    for defname in sorted(enumdefs, key=enumdefs.get): # sort by value
         strname = enumrepr[defname]
         if strname is None:
             excluded.append(defname)
@@ -160,15 +173,19 @@ def funcSourceBody(enumdefs, enumrepr, funcname, funcprmtype,
 
     for defname in excluded:
         src.extend([
-            '{}case {}: /* excluded */'.format(tabs(2), caselblfmt(defname))
+            '{}/* case {}:  excluded */'.format(tabs(2), caselblfmt(defname))
         ])
 
+    return src
+
+def funcDefEnd(usebitpos=False, nameunknown='??', **kwargs):
+    src = []
     if usebitpos:
         src.append('{}case {}:'.format(tabs(2), bitposMacroDefault()))
 
     src.extend([
         '{}default:'.format(tabs(2)),
-        '{}return "{}";'.format(tabs(2), nameunknown),
+        '{}return "{}";'.format(tabs(3), nameunknown),
         '{}}}'.format(tabs(1)) # escpae '}' with '}}'
     ])
     # ---- END switch case -----

@@ -10,13 +10,12 @@ log = logging.getLogger(os.path.basename(__file__))
 
 
 ENV_CLIARGS = 'MKENUMSTR_CLIARGS'
+ENV_ORGCWD = 'MKENUMSTR_ORGCWD'
 
 VERBOSE_TO_LOGLVL = [
     logging.WARNING,
     logging.INFO,
     logging.DEBUG]
-
-
 
 parser = argparse.ArgumentParser()
 
@@ -66,8 +65,6 @@ parser.add_argument('-v', '--verbose',
     help="Verbose Output. -v(vv)...")
 
 if 'TODO' == 'DONE':
-
-
     parser.add_argument('-s', '--symboltable',
         type=str,
         action='append',
@@ -93,8 +90,10 @@ def _splitListOfArgList(listOfArgLists):
 def setargs(argv):
     ''' argv excluding argv[0] i.e. script name '''
     argstr = ' '.join(argv)
-    #log.debug(argstr)
+    #argstr = argstr.replace('"', '\"')
+    log.debug(argstr)
     os.environ[ENV_CLIARGS] = argstr
+    os.environ[ENV_ORGCWD] = os.getcwd()
 
 def getargs():
     if ENV_CLIARGS not in os.environ:
@@ -109,3 +108,6 @@ def getargs():
     verboseCount = min(args.verbose, len(VERBOSE_TO_LOGLVL)-1) #clamp
     args.loglevel = VERBOSE_TO_LOGLVL[verboseCount]
     return args
+
+def cwdfullpath(p):
+    return os.path.join(os.environ[ENV_ORGCWD], p)

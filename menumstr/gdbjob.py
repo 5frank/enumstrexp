@@ -28,7 +28,7 @@ def relToFullPath(p):
     return os.path.join(THIS_DIR, p)
 
 
-def compileSymbolTable(ifile, searchdirs=[]):
+def compileSymbolTable(ifile, searchdirs=[], includes=[]):
     TMP_FILE_PREFIX = 'mkenumstr_tmpfile_'
     tmpc = tempfile.NamedTemporaryFile(
             prefix=TMP_FILE_PREFIX,
@@ -54,6 +54,10 @@ def compileSymbolTable(ifile, searchdirs=[]):
         '-include', ifile,
         '-I', THIS_DIR
     ]
+    for inclfile in includes:
+        #cmd.extend(['-I', os.path.abspath(incldir)])
+        #cmd.extend(['-I', relToFullPath(incldir)])
+        cmd.extend(['-include', inclfile])
 
     for incldir in searchdirs:
         #cmd.extend(['-I', os.path.abspath(incldir)])
@@ -159,13 +163,18 @@ def getSrcArgsList(objfile):
 
 
 def doEnum(cliargs, srcargs):
+    srcargsd = dict(srcargs)
     gdbexpr = srcargs.find if srcargs.find else srcargs.funcprmtype
+    '''
     try:
         ced = gdbtoolz.lookupEnums(gdbexpr, srcargs.mergedefs)
     except LookupError as e:
+        log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
+            srcargs.fileline)
+        sys.exit(-1)
         raise e #TODO better error message
 
-    srcargsd = dict(srcargs)
+
     enumdefs = ced.members
     enumrepr = makeEnumRepr(enumdefs, **srcargsd)
 
@@ -177,13 +186,47 @@ def doEnum(cliargs, srcargs):
         srclns.extend(codegen.funcPrototype(
             kvcomments=kvcomments, term=';\n', **srcargsd))
     else:
+
         srclns.extend(
             codegen.funcPrototype(
                 kvcomments=kvcomments, term='\n{', **srcargsd))
         srclns.extend(
             codegen.funcSourceBody(enumdefs, enumrepr, **srcargsd))
+    '''
+    src = []
 
-    return srclns
+
+    enumsfound = gdbtoolz.lookupEnums(gdbexpr)
+    if len(enumsfound) == 0:
+        log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
+            srcargs.fileline)
+        sys.exit(1)
+    if len(enumsfound) > 1 and not srcargs.mergedefs:
+        log.error('Multiple enums found "%s" %s:%d', gdbexpr, srcargs.filename,
+                    srcargs.fileline)
+        sys.exit(2)
+
+
+    if cliargs.oheader:
+        src.extend(codegen.funcDoxyComment(details=srcargsd, **srcargsd))
+        src.extend(codegen.funcPrototype(term=';', **srcargsd))
+        src.append('') #new line
+        return src
+
+    src.extend(codegen.funcDoxyComment(details={}, **srcargsd))
+    src.extend(codegen.funcPrototype(term='', **srcargsd))
+
+    src.extend(codegen.funcDefBegin(**srcargsd))
+    for ef in enumsfound:
+        enumdefs = ef.members
+        enumrepr = makeEnumRepr(enumdefs, **srcargsd)
+        comments = ['src:{}'.format(ef.defsrc), 'enum: {}'.format(ef.name)]
+        src.extend(codegen.multilineComment(comments, 2))
+        src.extend(codegen.funcDefCases(enumdefs, enumrepr, **srcargsd))
+
+    src.extend(codegen.funcDefEnd(**srcargsd))
+
+    return src
 
 def main():
     cliargs = envarg.getargs()
@@ -201,9 +244,8 @@ def main():
         else:
             srclns.extend(includes)
 
-
     for ifile in cliargs.ihfile:
-        objfile = compileSymbolTable(ifile, cliargs.searchdir)
+        objfile = compileSymbolTable(ifile, cliargs.searchdir, cliargs.includes)
         gdbtoolz.loadSymbols(objfile)
         for srcargs in getSrcArgsList(objfile):
             srclns.extend(doEnum(cliargs, srcargs))

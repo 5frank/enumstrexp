@@ -130,7 +130,7 @@ def lookupEnums(findexpr, mergedefs=False):
         members = gdb.types.make_enum_dict(btype)
         defsrc = getDefSource(findexpr)
         name = btype.tag if btype.tag is not None else btype.name
-        return CEnumDef(members, defsrc, name)
+        return [CEnumDef(members, defsrc, name)]
         #return enumdefs, defsrcfile
     enumsfound = {}
 
@@ -171,6 +171,7 @@ def lookupEnums(findexpr, mergedefs=False):
         members = gdb.types.make_enum_dict(btype)
 
         enumsfound[name] = CEnumDef(members, defsrc, name)
+    return enumsfound.values()
 
     if len(enumsfound) == 0:
         raise LookupError
