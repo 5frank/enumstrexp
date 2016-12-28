@@ -103,15 +103,35 @@ def getDefSource(symbName):
             return l.strip().lstrip('File').rstrip(':')
     return None
 
+
+class CEnumDef(object):
+    def __init__(self, members={}, defsrc='', name=''):
+        self.members = members
+        self.defsrc = defsrc
+        self.name = name
+
+def _mergeEnumDefs(enumdefs, unique=True):
+    members = {}
+    defsrcs = []
+    names = []
+    for ed in enumdefs:
+        # TODO check conficts
+        members.update(ed.members)
+        defsrcs.append(ed.defsrc)
+        names.append(ed.name)
+
+    return CEnumDef(members, ','.join(defsrcs), ','.join(names))
+
 def lookupEnums(findexpr, mergedefs=False):
     # first tryexact
     btype = getBasicType(findexpr)
     if btype is not None and isEnumType(btype):
         log.debug('Found exact type "%s"', findexpr)
-        defsrcfile = getDefSource(findexpr)
-        enumdefs = gdb.types.make_enum_dict(btype)
-        return enumdefs, defsrcfile
-
+        members = gdb.types.make_enum_dict(btype)
+        defsrc = getDefSource(findexpr)
+        name = btype.tag if btype.tag is not None else btype.name
+        return CEnumDef(members, defsrc, name)
+        #return enumdefs, defsrcfile
     enumsfound = {}
 
     rmpre = 'enum '
@@ -124,7 +144,7 @@ def lookupEnums(findexpr, mergedefs=False):
     for line in r.splitlines():
         log.debug('  %s', line)
         if line.startswith('File'):
-            defsrcfile =  line.strip().lstrip('File').rstrip(':')
+            defsrc =  line.strip().lstrip('File').rstrip(':')
             continue
 
         x = line.rstrip(';').split()
@@ -143,27 +163,20 @@ def lookupEnums(findexpr, mergedefs=False):
         if not isEnumType(btype):
             continue
 
-        btypename = btype.tag if btype.tag is not None else btype.name
-        assert(btypename)
-        if btypename in enumsfound:
-            log.debug('duplicate defs of "%s"', str(btypename))
+        name = btype.tag if btype.tag is not None else btype.name
+        assert(name)
+        if name in enumsfound:
+            log.debug('duplicate defs of "%s"', str(name))
             continue # TODO compare dups?
-        enumdefs = gdb.types.make_enum_dict(btype)
-        enumsfound[btypename] = (enumdefs, defsrcfile)
+        members = gdb.types.make_enum_dict(btype)
+
+        enumsfound[name] = CEnumDef(members, defsrc, name)
 
     if len(enumsfound) == 0:
         raise LookupError
     elif len(enumsfound) == 1:
-        k, (enumdefs, defsrcfile) = enumsfound.popitem()
-        return enumdefs, defsrcfile
+        return enumsfound.values()[0]
     elif mergedefs:
-        defsrcfiles = []
-        enumdefs = {}
-        for _enumdefs, _defsrcfile in enumsfound.items():
-            # TODO check conficts
-            defsrcfiles.append(_defsrcfile)
-            enumdefs.update(_enumdefs)
-
-        return enumdefs, ','.join(defsrcfiles)
+        return _mergeEnumDefs(enumsfound.values())
     else:
         raise LookupError
