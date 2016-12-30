@@ -17,16 +17,22 @@ import gdbtoolz
 
 log = logging.getLogger(os.path.basename(__file__))
 
+
 logging.basicConfig(
     level=logging.DEBUG,
-    stream=sys.stderr,
-    format='%(levelname)s:%(name)s:%(lineno)04d: %(message)s',
-    disable_existing_loggers=False)
+    stream=sys.stderr, #allows shell pipe of stdout
+    format='%(levelname)s:%(name)s:%(lineno)04d: %(message)s')
 
+class SrcArgsNamespace(object):
+    def __init__(self, adict):
+        self.__dict__.update(adict)
+
+    def __iter__(self):
+        for k,v in self.__dict__.items():
+            yield k,v
 
 def relToFullPath(p):
     return os.path.join(THIS_DIR, p)
-
 
 def compileSymbolTable(ifile, searchdirs=[], includes=[]):
     TMP_FILE_PREFIX = 'mkenumstr_tmpfile_'
@@ -79,7 +85,6 @@ def compileSymbolTable(ifile, searchdirs=[], includes=[]):
     os.remove(srcfile)
     return objfile
 
-
 def nm_findInstances(symbfile, prefix):
     '''
     gdb unable to retrive these, diffrent symbol table!?
@@ -115,40 +120,32 @@ def nm_findInstances(symbfile, prefix):
 
     return addrs
 
-
-def makeEnumRepr(emnumdefs, strstrip=None, exclude=None, **kwargs):
+def makeEnumRepr(cliargs, srcargs, emnumdefs):
     #log.debug(emnumdefs)
-    if strstrip is not None:
-        restrip = re.compile(strstrip)
+
+    if srcargs.strstrip is not None: # none if srcargs.strstrip == ''
+        restrip = re.compile(srcargs.strstrip)
         stripper = lambda x : restrip.sub('', x)
+
+    elif cliargs.stripcommonprefix:
+        prefix = os.path.commonprefix(emnumdefs.keys())
+        restrip = re.compile('^{}'.format(prefix))
+        stripper = lambda x : restrip.sub('', x)
+
     else:
         stripper = lambda x : x
 
-    if exclude:
-        reexcl = re.compile(exclude)
+    if srcargs.exclude:
+        reexcl = re.compile(srcargs.exclude)
         excluder = lambda x : reexcl.search(x) is not None
     else:
         excluder = lambda x : False
 
-    excluded = {}
     enumrepr = {}
     for name, val in emnumdefs.items():
-        if excluder(name):
-            strname = None
-        else:
-            strname = stripper(name)
+        enumrepr[name] = None if excluder(name) else stripper(name)
 
-        enumrepr[name] = strname
     return enumrepr
-
-
-class SrcArgsNamespace(object):
-    def __init__(self, adict):
-        self.__dict__.update(adict)
-
-    def __iter__(self):
-        for k,v in self.__dict__.items():
-            yield k,v
 
 def getSrcArgsList(objfile):
     ''' assumes objfile loaded to gdb prior call '''
@@ -165,36 +162,7 @@ def getSrcArgsList(objfile):
 def doEnum(cliargs, srcargs):
     srcargsd = dict(srcargs)
     gdbexpr = srcargs.find if srcargs.find else srcargs.funcprmtype
-    '''
-    try:
-        ced = gdbtoolz.lookupEnums(gdbexpr, srcargs.mergedefs)
-    except LookupError as e:
-        log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
-            srcargs.fileline)
-        sys.exit(-1)
-        raise e #TODO better error message
-
-
-    enumdefs = ced.members
-    enumrepr = makeEnumRepr(enumdefs, **srcargsd)
-
-    kvcomments = srcargsd
-    kvcomments['defsrc'] = ced.defsrc
-    kvcomments['enumname']  = ced.name
-    srclns = []
-    if cliargs.oheader:
-        srclns.extend(codegen.funcPrototype(
-            kvcomments=kvcomments, term=';\n', **srcargsd))
-    else:
-
-        srclns.extend(
-            codegen.funcPrototype(
-                kvcomments=kvcomments, term='\n{', **srcargsd))
-        srclns.extend(
-            codegen.funcSourceBody(enumdefs, enumrepr, **srcargsd))
-    '''
-    src = []
-
+    c = []
 
     enumsfound = gdbtoolz.lookupEnums(gdbexpr)
     if len(enumsfound) == 0:
@@ -206,27 +174,35 @@ def doEnum(cliargs, srcargs):
                     srcargs.fileline)
         sys.exit(2)
 
-
     if cliargs.oheader:
-        src.extend(codegen.funcDoxyComment(details=srcargsd, **srcargsd))
-        src.extend(codegen.funcPrototype(term=';', **srcargsd))
-        src.append('') #new line
+        c.extend(codegen.funcDoxyComment(details=srcargsd, **srcargsd))
+        c.extend(codegen.funcPrototype(term=';', **srcargsd))
+        c.append('') #new line
         return src
 
-    src.extend(codegen.funcDoxyComment(details={}, **srcargsd))
-    src.extend(codegen.funcPrototype(term='', **srcargsd))
+    c.extend(codegen.funcDoxyComment(details={}, **srcargsd))
+    c.extend(codegen.funcPrototype(term='', **srcargsd))
 
-    src.extend(codegen.funcDefBegin(**srcargsd))
+    c.extend(codegen.funcDefBegin(**srcargsd))
+
+    if len(enumsfound) > 1:
+        #enumsfound.sort(key=lambda ef: min(ef.members), reverse=True)
+        #enumsfound.sort(key=lambda ef: ef.members[min(ef.members)])
+        enumsfound.sort(key=lambda ef: min(ef.members.values()))
+
     for ef in enumsfound:
         enumdefs = ef.members
-        enumrepr = makeEnumRepr(enumdefs, **srcargsd)
-        comments = ['src:{}'.format(ef.defsrc), 'enum: {}'.format(ef.name)]
-        src.extend(codegen.multilineComment(comments, 2))
-        src.extend(codegen.funcDefCases(enumdefs, enumrepr, **srcargsd))
+        enumrepr = makeEnumRepr(cliargs, srcargs, enumdefs)
+        comments = [
+            'src:{}'.format(ef.defsrc),
+            'enum: {} min: {} max:'.format(ef.name, min(ef.members.values()))
+            ]
+        c.extend(codegen.multilineComment(comments, 2))
+        c.extend(codegen.funcDefCases(enumdefs, enumrepr, **srcargsd))
 
-    src.extend(codegen.funcDefEnd(**srcargsd))
+    c.extend(codegen.funcDefEnd(**srcargsd))
 
-    return src
+    return c
 
 def main():
     cliargs = envarg.getargs()
@@ -234,32 +210,32 @@ def main():
     log.debug('-------- GDB --------')
     log.debug(str(cliargs))
 
-    srclns = []
+    c = []#c code source lines
     if cliargs.includes:
         includes = codegen.includeDirectives(cliargs.includes, cliargs.defundef)
         if cliargs.useguards:
-            srclns.extend(codegen.includeGuardBegin(cliargs.outfile))
-            srclns.extend(includes)
-            srclns.extend(codegen.includeGuardEnd())
+            c.extend(codegen.includeGuardBegin(cliargs.outfile))
+            c.extend(includes)
+            c.extend(codegen.includeGuardEnd())
         else:
-            srclns.extend(includes)
+            c.extend(includes)
 
     for ifile in cliargs.ihfile:
         objfile = compileSymbolTable(ifile, cliargs.searchdir, cliargs.includes)
         gdbtoolz.loadSymbols(objfile)
         for srcargs in getSrcArgsList(objfile):
-            srclns.extend(doEnum(cliargs, srcargs))
+            c.extend(doEnum(cliargs, srcargs))
         log.debug('Removing temp file %s', objfile)
         os.remove(objfile)
 
     if cliargs.outfile:
         #TODO check file
-        srcstr = '\n'.join(srclns)
+
         log.info('Writing source file %s', cliargs.outfile)
         with open(cliargs.outfile,'w') as fh:
-            fh.write(srcstr)
+            fh.write('\n'.join(c))
     else:
-        for line in srclns:
+        for line in c:
             print(line)
 
     return 0

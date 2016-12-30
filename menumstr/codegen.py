@@ -6,35 +6,34 @@ TABSTYLE = '  '
 tabs = lambda n : n * TABSTYLE
 
 def fileComments(kvcomments=None):
-    srclines = [
+    c = [
     '/** AUTO GENERATED CODE BY MKENUMSTR */'
     ]
-    return srclines
+    return c
 
 def includeDirectives(filelist, defundef=[]):
+    c = []
     definelines = []
     undefineslines = []
-    for duw in defundef:
-        definelines.append('#define {}'.format(duw))
-        undefineslines.append('#undef {}'.format(duw))
-
-    srclines = []
+    for k, v in defundef.items():
+        definelines.append('#define {} {}'.format(k, v))
+        undefineslines.append('#undef {}'.format(k))
 
     for inclfile in filelist:
         #log.debug(inclfile)
         include = '#include "{}"'.format(inclfile)
         if defundef:
-            srclines.extend(definelines)
-            srclines.append(include)
-            srclines.extend(undefineslines)
+            c.extend(definelines)
+            c.append(include)
+            c.extend(undefineslines)
         else:
-            srclines.append(include)
+            c.append(include)
 
-    return srclines
+    return c
 
 
 def bitposMacroDefine(size):
-    srclines = [
+    c = [
         tabs(1) + '/** Bit Mask Compare */',
         tabs(1) + '#define MSKCMP(X, POS) ((X) == (1u << POS)) ? POS :',
         tabs(1) + '/** single bit set or duplicate case value error */',
@@ -42,17 +41,17 @@ def bitposMacroDefine(size):
         tabs(1) + '/** Better jumptable from cases */',
         tabs(1) + '#define BITPOS(X) (\\']
 
-    fmt = tabs(2) + 'MSKCMP(X, {0:>2}u) ' * 4 + '\\'
+    fmt = tabs(2) + 'MSKCMP(X, {:>2}u) ' * 4 + '\\'
 
     for i in range(0, size * 8, 8):
-        srclines.extend([
+        c.extend([
             fmt.format(i+0, i+1, i+2, i+3),
             fmt.format(i+4, i+5, i+6, i+7)
         ])
 
-    srclines.extend([tabs(2) + 'BITPOS_INVALID_DEFAULT)', ''])
+    c.extend([tabs(2) + 'BITPOS_INVALID_DEFAULT)', ''])
 
-    return srclines
+    return c
 
 def bitposMacroCaseLbl(defname):
     return 'BITPOS({})'.format(defname)
@@ -61,13 +60,12 @@ def bitposMacroDefault():
     return 'BITPOS_INVALID_DEFAULT'
 
 def bitposMacroUndef():
-    srclines = [
+    c = [
         tabs(1) + '#undef MSKCMP',
         tabs(1) + '#undef BITPOS_INVALID_DEFAULT',
         tabs(1) + '#undef BITPOS']
 
-    return srclines
-
+    return c
 
 def includeGuardBegin(fname):
     suffix='_INCLUDE_GUARD'
@@ -78,17 +76,45 @@ def includeGuardBegin(fname):
         randchars = (random.choice(string.ascii_uppercase) for c in range(8))
         defname = 'UNKNOWN_OUTFILE_{}{}'.format(''.join(randchars), suffix)
 
-    src = [
+    c = [
         '#ifndef {}'.format(defname),
         '#define {}'.format(defname),
         '']
-    return src
+    return c
 
 def includeGuardEnd():
     return ['#endif /* END include guard */', ''] #extra lb at end of file
 
 def funcParamName(usebitpos=False):
     return 'bitpos' if usebitpos else 'value'
+
+def singlelineComment(comment, tablevel=0):
+    return ['{}/*{}*/'.format(tabs(tablevel), comment)]
+
+def funcDoxyComment(details={}, usebitpos=False, **kwargs):
+    c = []
+    prmname = funcParamName(usebitpos)
+
+    if usebitpos:
+        brief = 'Enum bit flag index to string lookup'
+        param = 'bit position index representing a enum flag. (LSB == 0)'
+    else:
+
+        brief = 'Enum value to string lookup.'
+        param = 'enum value.'
+    c.extend([
+        '/**',
+        ' * @brief {}'.format(brief),
+        ' * @note  Auto generated code.',
+        ' * @param {} - {}'.format(prmname, param)
+    ])
+
+    if details:
+        c.append(' * @details')
+        for tag, comment in details.items():
+            c.append(' *   {} {}'.format(tag, comment))
+    c.append(' */')
+    return c
 
 def funcPrototype(funcname, funcprmtype, usebitpos=False, term='', **kwargs):
     prmname = funcParamName(usebitpos)
@@ -100,36 +126,6 @@ def funcPrototype(funcname, funcprmtype, usebitpos=False, term='', **kwargs):
 
     return [prototype]
 
-
-def singlelineComment(comment, tablevel=0):
-    return ['{}/*{}*/'.format(tabs(tablevel), comment)]
-
-def funcDoxyComment(details={}, usebitpos=False, **kwargs):
-    src = []
-    prmname = funcParamName(usebitpos)
-
-    if usebitpos:
-        brief = 'Enum bit flag index to string lookup'
-        param = 'bit position index representing a enum flag. (LSB == 0)'
-    else:
-
-        brief = 'Enum value to string lookup.'
-        param = 'enum value.'
-    src.extend([
-        '/**',
-        ' * @brief {}'.format(brief),
-        ' * @note  Auto generated code.',
-        ' * @param {} - {}'.format(prmname, param)
-    ])
-
-    if details:
-        src.append(' * @details')
-        for tag, comment in details.items():
-            src.append(' *   {} {}'.format(tag, comment))
-    src.append(' */')
-    return src
-
-
 def multilineComment(comments=[],tablevel=0, compact=True):
     #s = '{}/* '.format(tabs(tablevel))
     #for cm in comments:
@@ -138,23 +134,21 @@ def multilineComment(comments=[],tablevel=0, compact=True):
     tabstr = tabs(tablevel)
     joinsep = '\n{} * '.format(tabstr)
     return ['{}/* {} */'.format(tabstr, joinsep.join(comments))]
-    #return src
 
 def funcDefBegin(usebitpos=False, funcprmsize=4, **kwargs):
     prmname = funcParamName(usebitpos)
-    src = ['{']
+    c = ['{']
     if usebitpos:
-        src.extend(bitposMacroDefine(funcprmsize))
+        c.extend(bitposMacroDefine(funcprmsize))
 
-    src.extend([
+    c.extend([
         '{}switch({})'.format(tabs(1), prmname),
         '{}{{'.format(tabs(1))# escpae '{' with '{{'
     ])
-    return src
-
+    return c
 
 def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
-    src = []
+    c = []
     xindent = ''
     def caselblfmt(defname):
         label = defname if usedefs else int(enumdefs[defname])
@@ -166,31 +160,31 @@ def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
         if strname is None:
             excluded.append(defname)
             continue
-        src.extend([
+        c.extend([
             '{}case {}:'.format(tabs(2), caselblfmt(defname)),
             '{}return {}"{}";'.format(tabs(3), xindent, strname)
         ])
 
     for defname in excluded:
-        src.extend([
+        c.extend([
             '{}/* case {}:  excluded */'.format(tabs(2), caselblfmt(defname))
         ])
 
-    return src
+    return c
 
 def funcDefEnd(usebitpos=False, nameunknown='??', **kwargs):
-    src = []
+    c = []
     if usebitpos:
-        src.append('{}case {}:'.format(tabs(2), bitposMacroDefault()))
+        c.append('{}case {}:'.format(tabs(2), bitposMacroDefault()))
 
-    src.extend([
+    c.extend([
         '{}default:'.format(tabs(2)),
         '{}return "{}";'.format(tabs(3), nameunknown),
         '{}}}'.format(tabs(1)) # escpae '}' with '}}'
     ])
     # ---- END switch case -----
     if usebitpos:
-        src.extend(bitposMacroUndef())
+        c.extend(bitposMacroUndef())
 
-    src.append('}')
-    return src
+    c.append('}')
+    return c

@@ -19,7 +19,6 @@ VERBOSE_TO_LOGLVL = [
 
 parser = argparse.ArgumentParser()
 
-
 parser.add_argument('-i', '--ihfile',
     type=str,
     action='append',
@@ -44,15 +43,21 @@ parser.add_argument('--includes',
 
 parser.add_argument('--defundef',
     type=str,
+    action='append',
     default=[],
     help='Wrap all includes with this. solves poluted namespace etc')
 
+parser.add_argument('--stripcommonprefix',
+        action='store_true',
+        default=False,
+    help='Strip common prefix in string representation of all enum members. '\
+        'This option can be overrided by the .stripstr param in macro param. '\
+        'Might give undesirable results if number of enum members is small')
 
 parser.add_argument('--oheader',
     action='store_true',
     default=False,
     help='Output header')
-
 
 parser.add_argument('--useguards',
     action='store_true',
@@ -87,6 +92,26 @@ def _splitListOfArgList(listOfArgLists):
         ls.extend(_splitArgList(x))
     return ls
 
+
+def _parseDefUndefs(defundefs):
+    d = {}
+    for du in defundefs:
+        du = du.strip()
+        if '=' in du:
+            toks = du.split('=')
+            if ' ' in toks[0]:
+                raise ValueError #TOOD
+            k = toks[0]
+            v = toks[1] #empty sting if noting after '='
+        elif ' ' in du:
+            raise ValueError #TOOD
+        else:
+            k = du
+            v = ''
+        d[k] = v
+
+    return d
+
 def setargs(argv):
     ''' argv excluding argv[0] i.e. script name '''
     argstr = ' '.join(argv)
@@ -103,7 +128,7 @@ def getargs():
     args = parser.parse_args(shlex.split(argstr))
 
     args.includes = _splitListOfArgList(args.includes)
-    args.defundef = _splitArgList(args.defundef)
+    args.defundef = _parseDefUndefs(args.defundef)
 
     verboseCount = min(args.verbose, len(VERBOSE_TO_LOGLVL)-1) #clamp
     args.loglevel = VERBOSE_TO_LOGLVL[verboseCount]

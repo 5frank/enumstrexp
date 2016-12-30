@@ -36,7 +36,7 @@ struct mkenumstr_job_s
 
 #define MKENUMSTR_FUNC(FUNC_NAME, FUNC_PRMT, ...) \
 const char * FUNC_NAME(FUNC_PRMT x) { return "\?\?"; }; \
-static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(FUNC_NAME) = \
+static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(__LINE__) = \
 { \
   .funcname = MKENUMSTR_STRINGIFY(FUNC_NAME), \
   .funcprmtype = MKENUMSTR_STRINGIFY(FUNC_PRMT), \
@@ -47,7 +47,21 @@ static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(FUNC_NAME) = \
 };
 
 
-//TODO
+#define MKENUMSTR_FUNC2(FT, ...) \
+{ \
+  static volatile struct mkenumstr_job_s mkenumstr__job = \
+  { \
+    .funcname = __func__, \
+    .filename = __FILE__, \
+    .fileline = __LINE__, \
+    .find = MKENUMSTR_STRINGIFY(FT), \
+    __VA_ARGS__ \
+  }; \
+  (void) mkenumstr__job; \
+  return "\?\?"; \
+}; \
+
+
 #define MKENUMSTR_INCLUDE();
 #define MKENUMSTR_DEFAULT_SETTINGS()
 

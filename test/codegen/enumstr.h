@@ -12,16 +12,14 @@
 #error "undef wtf?"
 #endif
 
-
+/*
 MKENUMSTR_FUNC(enumstr_myenum0, enum testenum_negjmp_e);
 
 
 MKENUMSTR_FUNC(enumstr_myenum1, enum testenum_negjmp_e,
   .strstrip="^testenum_negjmp_", .exclude="_LAST");
+*/
 
-
-MKENUMSTR_FUNC(enumstr_myenum2, int,
-  .find="enum testenum_negjmp_");
 
 #if 0
 MKENUMSTR_FUNC(enumstr_myenum3, int,

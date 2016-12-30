@@ -4,6 +4,18 @@ import os
 log = logging.getLogger(os.path.basename(__file__))
 
 
+class EmumInfo(object):
+    def __init__(self, members={}, defsrc='', name=''):
+        self.members = members
+        self.defsrc = defsrc
+        self.name = name
+
+class FuncInfo(object):
+    def __init__(self, rettype=None, prmtype=None):
+        self.rettype = rettype
+        self.prmtype = prmtype
+        self.prmszie = None
+
 def byteify(x):
     ''' python < 3. convert unicode to string '''
     if sys.version_info[0] >= 3:
@@ -104,11 +116,23 @@ def getDefSource(symbName):
     return None
 
 
-class CEnumDef(object):
-    def __init__(self, members={}, defsrc='', name=''):
-        self.members = members
-        self.defsrc = defsrc
-        self.name = name
+def getFuncInfo(funcname, srcfile=''):
+    try:
+        t = gdb.types.get_basic_type(gdb.lookup_type(funcname))
+    except RuntimeError:
+        try:
+            t = gdb.parse_and_eval(funcname).type
+            t = gdb.types.get_basic_type(t)
+        except RuntimeError:
+            return None
+
+    s = str(t)
+    m = re.search(r'(.*?)\((.*?)\)', s)
+    fnfo = FuncInfo()
+    fnfo.rettype = m.group(1)
+    fnfo.prmtype = m.group(2) # will give all params if more then one
+    return fnfo
+    #return m #str(m.group(0))
 
 def _mergeEnumDefs(enumdefs, unique=True):
     members = {}
@@ -120,7 +144,7 @@ def _mergeEnumDefs(enumdefs, unique=True):
         defsrcs.append(ed.defsrc)
         names.append(ed.name)
 
-    return CEnumDef(members, ','.join(defsrcs), ','.join(names))
+    return EmumInfo(members, ','.join(defsrcs), ','.join(names))
 
 def lookupEnums(findexpr, mergedefs=False):
     # first tryexact
@@ -130,7 +154,7 @@ def lookupEnums(findexpr, mergedefs=False):
         members = gdb.types.make_enum_dict(btype)
         defsrc = getDefSource(findexpr)
         name = btype.tag if btype.tag is not None else btype.name
-        return [CEnumDef(members, defsrc, name)]
+        return [EmumInfo(members, defsrc, name)]
         #return enumdefs, defsrcfile
     enumsfound = {}
 
@@ -170,14 +194,6 @@ def lookupEnums(findexpr, mergedefs=False):
             continue # TODO compare dups?
         members = gdb.types.make_enum_dict(btype)
 
-        enumsfound[name] = CEnumDef(members, defsrc, name)
-    return enumsfound.values()
+        enumsfound[name] = EmumInfo(members, defsrc, name)
 
-    if len(enumsfound) == 0:
-        raise LookupError
-    elif len(enumsfound) == 1:
-        return enumsfound.values()[0]
-    elif mergedefs:
-        return _mergeEnumDefs(enumsfound.values())
-    else:
-        raise LookupError
+    return enumsfound.values()
