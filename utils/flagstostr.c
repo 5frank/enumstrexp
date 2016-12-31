@@ -20,43 +20,85 @@ static char * strappnd(char * restrict dst,
   return dst;
 }
 
+struct flagdiff32_s
+{
+  uint32_t flags;
+  uint32_t diffMsk;
+  uint32_t diffSet;
+  uint32_t diffClr;
+};
+
+static void flagdiff_update(struct flagdiff32_s * diff, uint32_t newFlags)
+{
+  diff->diffMsk = newFlags ^ diff->flags;
+  diff->diffSet = diff->diffMsk & newFlags;
+  diff->diffClr = diff->diffMsk & diff->flags;
+  diff->flags = newFlags;
+}
+
+static void flagdiff_reset(struct flagdiff32_s * diff)
+{
+  memset(diff, 0, sizeof(*diff));
+}
+
 int flagstostr(char * dest,
                size_t size,
+               const char prefix,
+               const char delimiter,
                const char * (*lookupfunc) (unsigned int),
                unsigned int flags)
 {
-  if (!dest || !lookupfunc)
+  if (!size || !dest || !lookupfunc)
   {
     return -1;
   }
-  if (!size)
+  char * s = dest;
+
+  if (size < 4)
   {
+    *s = '\0';
     return -2;
   }
-  char * s = dest;
-  const char * dstlast = s + (size - 2); // -1 as last -1 for separator
-  unsigned int i = 0;
-  for (i = 0; i < (sizeof(flags) * CHAR_BIT); i++)
+
+  const char * dstlast = dest + (size - 3); // -1 as last -1 for separator
+  unsigned int bitindex = 0;
+  for (;;)
   {
     if (flags & 1u)
     {
-      s = strappnd(s, dstlast, lookupfunc(i));
-      if (s == dstlast)
+      if (prefix)
       {
-        break;
+        *s++ = prefix;
+      }
+      const char * restrict src = lookupfunc(bitindex);
+      if (!src)
+      {
+        src = "?";
+      }
+
+      while(*src != '\0')
+      {
+        if (s == dstlast)
+        {
+          *s = '\0';
+          return s - dest;
+        }
+        *s++ = *src++;
       }
     }
 
     flags >>= 1u;
 
-    if (flags)
+    if (!flags)
     {
-      *s++ = FLAG_SEPARATOR;
+      *s = '\0';
+      return s - dest;
     }
-    else
+    if (delimiter)
     {
-      break;
+      *s++ = delimiter;
     }
+    bitindex++;
   }
 
   return s - dest;

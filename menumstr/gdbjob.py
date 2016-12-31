@@ -5,6 +5,7 @@ import logging
 import re
 import subprocess
 import tempfile
+import sys
 from pprint import pprint
 
 #needed as python invoked by gdb
@@ -55,6 +56,7 @@ def compileSymbolTable(ifile, searchdirs=[], includes=[]):
     cmd = ['gcc', '-o', objfile, srcfile,
         '-O0', '-g', '-g3', '-ggdb', '-std=gnu99', '-Wall',
         '-D', 'MKENUMSTR_COMPILE',
+        '-D', 'MKENUMSTR_SOURCE',
         '-fno-eliminate-unused-debug-types',
         '-include', relToFullPath('mkenumstr.h'),
         '-include', ifile,
@@ -155,15 +157,38 @@ def getSrcArgsList(objfile):
     for addr in addresses:
         srcargsd = gdbtoolz.getStructDict(addr, 'struct mkenumstr_job_s')
         srcargsl.append(SrcArgsNamespace(srcargsd))
-
+    #sort to same order as gencdg
+    srcargsl.sort(key=lambda srcargs: srcargs.fileline)
     return srcargsl
 
+def kvComments(cliargs, srcargsd, gdbexpr):
+    srcargsbasename = os.path.basename(srcargsd['filename'])
+    d  = {
+        'gencfg': '{}:{}'.format(srcargsbasename, srcargsd['fileline']),
+        'enum': gdbexpr
+    }
+    return d
+    '''
+    'strstrip': str(srcargsd['strstrip'])
+
+    if cliargs.stripcommonprefix:
+        d['stripcommonprefix'] = 'Yes'
+
+    ignore = ['filename', 'fileline', 'strstrip', 'funcname',
+        'funcprmsize', 'funcprmtype', 'find']
+    for k, v in srcargsd.items():
+        if k in ignore:
+            continue
+        if v:
+            d[k] = v
+    return d
+    '''
 
 def doEnum(cliargs, srcargs):
     srcargsd = dict(srcargs)
     gdbexpr = srcargs.find if srcargs.find else srcargs.funcprmtype
     c = []
-
+    h = []
     enumsfound = gdbtoolz.lookupEnums(gdbexpr)
     if len(enumsfound) == 0:
         log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
@@ -174,27 +199,24 @@ def doEnum(cliargs, srcargs):
                     srcargs.fileline)
         sys.exit(2)
 
-    if cliargs.oheader:
-        c.extend(codegen.funcDoxyComment(details=srcargsd, **srcargsd))
-        c.extend(codegen.funcPrototype(term=';', **srcargsd))
-        c.append('') #new line
-        return src
+    #if cliargs.oheader:
+    details = kvComments(cliargs, srcargsd, gdbexpr)
+    h.extend(codegen.funcDoxyComment(details=details, **srcargsd))
+    h.extend(codegen.funcPrototype(term=';', **srcargsd))
+    h.append('') #new line
 
-    c.extend(codegen.funcDoxyComment(details={}, **srcargsd))
+    c.extend(codegen.funcDoxyComment(details=details, **srcargsd))
     c.extend(codegen.funcPrototype(term='', **srcargsd))
-
     c.extend(codegen.funcDefBegin(**srcargsd))
 
     if len(enumsfound) > 1:
-        #enumsfound.sort(key=lambda ef: min(ef.members), reverse=True)
-        #enumsfound.sort(key=lambda ef: ef.members[min(ef.members)])
         enumsfound.sort(key=lambda ef: min(ef.members.values()))
 
     for ef in enumsfound:
         enumdefs = ef.members
         enumrepr = makeEnumRepr(cliargs, srcargs, enumdefs)
         comments = [
-            'src:{}'.format(ef.defsrc),
+            'src:{}'.format(os.path.basename(ef.defsrc)),
             'enum: {} min: {} max:'.format(ef.name, min(ef.members.values()))
             ]
         c.extend(codegen.multilineComment(comments, 2))
@@ -202,44 +224,68 @@ def doEnum(cliargs, srcargs):
 
     c.extend(codegen.funcDefEnd(**srcargsd))
 
-    return c
+    return c, h
+
+def export(outfile, srclines, outtype):
+    if outfile == 'stdout':
+        if outtype == 'h':
+            print('/* -------- MKENUMSTR DECLARATIONS OUTPUT -------- */')
+        else:
+            print('/* -------- MKENUMSTR DEFINITONS OUTPUT -------- */')
+        for line in srclines:
+            print(line)
+    elif outfile is not None:
+        #TODO check file exists
+        log.info('Writing source file %s', outfile)
+        with open(outfile,'w') as fh:
+            fh.write('\n'.join(srclines))
+    else:
+        log.info('No output destination provides?')
 
 def main():
     cliargs = envarg.getargs()
-    log.setLevel(cliargs.loglevel)
+    #log.setLevel(cliargs.loglevel) # FIXME
     log.debug('-------- GDB --------')
     log.debug(str(cliargs))
+    #os.chdir(cliargs.cwd)
 
     c = []#c code source lines
-    if cliargs.includes:
-        includes = codegen.includeDirectives(cliargs.includes, cliargs.defundef)
-        if cliargs.useguards:
-            c.extend(codegen.includeGuardBegin(cliargs.outfile))
-            c.extend(includes)
-            c.extend(codegen.includeGuardEnd())
-        else:
-            c.extend(includes)
+    h = []#h header declear
+    if cliargs.useguards:
+        h.extend(codegen.includeGuardBegin(cliargs.outh))
 
-    for ifile in cliargs.ihfile:
-        objfile = compileSymbolTable(ifile, cliargs.searchdir, cliargs.includes)
+    #definitions likley depends on these headers
+    #baseincls = [os.path.basename(fp) for fp in cliargs.inh]
+    baseincls = cliargs.inh
+    #if cliargs.usedeps: #TODO
+    h.extend(codegen.includeDirectives(baseincls))
+    c.extend(['#define MKENUMSTR_SOURCE'])
+    c.extend(codegen.includeDirectives(baseincls))
+
+
+    if cliargs.includes:
+        includes = codegen.includeDirectives(cliargs.includes)
+        c.extend(includes)
+
+    for ih in cliargs.inh:
+        objfile = compileSymbolTable(ih, cliargs.searchdir, cliargs.includes)
         gdbtoolz.loadSymbols(objfile)
         for srcargs in getSrcArgsList(objfile):
-            c.extend(doEnum(cliargs, srcargs))
+            _c, _h = doEnum(cliargs, srcargs)
+            c.extend(_c)
+            h.extend(_h)
+        else:
+            log.warning('Found nothing to export from %s', ih)
         log.debug('Removing temp file %s', objfile)
         os.remove(objfile)
 
-    if cliargs.outfile:
-        #TODO check file
+    if cliargs.useguards:
+        h.extend(codegen.includeGuardEnd())
 
-        log.info('Writing source file %s', cliargs.outfile)
-        with open(cliargs.outfile,'w') as fh:
-            fh.write('\n'.join(c))
-    else:
-        for line in c:
-            print(line)
+    export(cliargs.outc, c, 'c')
+    export(cliargs.outh, h, 'h')
 
     return 0
-
 
 
 if __name__ == '__main__':

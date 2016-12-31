@@ -11,23 +11,22 @@ def fileComments(kvcomments=None):
     ]
     return c
 
-def includeDirectives(filelist, defundef=[]):
+def includeDirectives(filelist, defundef={}):
     c = []
-    definelines = []
-    undefineslines = []
-    for k, v in defundef.items():
-        definelines.append('#define {} {}'.format(k, v))
-        undefineslines.append('#undef {}'.format(k))
+    if defundef:
+        definelines = []
+        undefineslines = []
+        for k, v in defundef.items():
+            definelines.append('#define {} {}'.format(k, v))
+            undefineslines.append('#undef {}'.format(k))
 
-    for inclfile in filelist:
-        #log.debug(inclfile)
-        include = '#include "{}"'.format(inclfile)
-        if defundef:
+        for inclfile in filelist:
+            include = '#include "{}"'.format(inclfile)
             c.extend(definelines)
             c.append(include)
             c.extend(undefineslines)
-        else:
-            c.append(include)
+    else:
+        c = ['#include "{}"'.format(hf) for hf in filelist]
 
     return c
 
@@ -67,14 +66,16 @@ def bitposMacroUndef():
 
     return c
 
-def includeGuardBegin(fname):
-    suffix='_INCLUDE_GUARD'
+def includeGuardBegin(fname, suffix = '_INCLUDE_H_'):
     if fname:
-        basename = os.path.basename(fname).replace('.', '_').upper()
-        defname = '{}{}'.format(basename, suffix)
+        #basename = os.path.basename(fname).replace('.', '_').upper()
+        basename = os.path.basename(fname).split('.')[0].upper()
+
     else:
-        randchars = (random.choice(string.ascii_uppercase) for c in range(8))
-        defname = 'UNKNOWN_OUTFILE_{}{}'.format(''.join(randchars), suffix)
+        #randchars = (random.choice(string.ascii_uppercase) for c in range(8))
+        #defname = 'UNKNOWN_OUTFILE_{}{}'.format(''.join(randchars), suffix)
+        basename = 'UNKNOWN_OUTFILE'
+    defname = '{}{}'.format(basename, suffix)
 
     c = [
         '#ifndef {}'.format(defname),

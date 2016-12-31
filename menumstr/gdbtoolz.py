@@ -1,6 +1,8 @@
 import gdb
 import logging
 import os
+import sys
+import re
 log = logging.getLogger(os.path.basename(__file__))
 
 

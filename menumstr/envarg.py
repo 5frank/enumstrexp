@@ -19,33 +19,39 @@ VERBOSE_TO_LOGLVL = [
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('-i', '--ihfile',
+parser.add_argument('-ih', '--inh',
     type=str,
     action='append',
     default=[],
-    help='input file(s). header to create source from')
+    help='Input header file(s) with instructions to generate source from')
 
-parser.add_argument('-of', '--outfile',
+
+parser.add_argument('-oc', '--outc',
     type=str,
-    help='Output file to be generated. Output is sent to stdout if not set')
+    default='stdout',
+    help='Generated definitions output destination.'\
+        ' i.e. function body etc '\
+        ' that typically goes in a source fle with a .c suffix')
+
+parser.add_argument('-oh', '--outh',
+    type=str,
+    default='',
+    help='Generated declrarations output destination.'\
+        ' i.e. exposed prototypes and defines' \
+        ' that typically goes in a header with a .h suffix')
 
 parser.add_argument('-I', '--searchdir',
     type=str,
     action='append',
     default=[],
-    help='Directory to search for includes. same as gcc -I arg')
+    help='Directory to search for includes. '\
+        'Same as gcc -I arg but value must be separated with space.')
 
 parser.add_argument('--includes',
     type=str,
     action='append',
     default=[],
     help='Comma or line break spearated list of includes')
-
-parser.add_argument('--defundef',
-    type=str,
-    action='append',
-    default=[],
-    help='Wrap all includes with this. solves poluted namespace etc')
 
 parser.add_argument('--stripcommonprefix',
         action='store_true',
@@ -54,15 +60,16 @@ parser.add_argument('--stripcommonprefix',
         'This option can be overrided by the .stripstr param in macro param. '\
         'Might give undesirable results if number of enum members is small')
 
-parser.add_argument('--oheader',
+parser.add_argument('--nodeps',
     action='store_true',
     default=False,
-    help='Output header')
+    help='Remove/reduce dependencies on enum definitons TODO') #TODO
 
-parser.add_argument('--useguards',
+parser.add_argument('--noinclguards',
     action='store_true',
     default=False,
-    help='Use include guards')
+    help='Do not use include guards in --outh output.'\
+        ' Useful if --outh="stdout" and result is appended to file.')
 
 parser.add_argument('-v', '--verbose',
     action='count',
@@ -77,6 +84,17 @@ if 'TODO' == 'DONE':
         help='Extra symbol table(s) readable by gdb (.elf, .o. out, etc)'\
              'where enums can be found. assumes compiled with debug symbols')
 
+if 'REMOVE' == 'LATER':
+    parser.add_argument('--defundef',
+        type=str,
+        action='append',
+        default=[],
+        help='Wrap all includes with this. solves poluted namespace etc.'\
+            'syntax examples: --defundef="FOO=123" --defundef="BAR"')
+
+    parser.add_argument('-of', '--outfile',
+        type=str,
+        help='Output file to be generated. Output is sent to stdout if not set')
 
 def _splitArgList(argList):
     ls = []
@@ -94,6 +112,10 @@ def _splitListOfArgList(listOfArgLists):
 
 
 def _parseDefUndefs(defundefs):
+    '''
+    Convert list like ['FOO=123', 'BAR'] to dict {'FOO':123, 'BAR':''}
+    Bad names, with spaces etc, should throw error at compile time.
+    '''
     d = {}
     for du in defundefs:
         du = du.strip()
@@ -116,7 +138,7 @@ def setargs(argv):
     ''' argv excluding argv[0] i.e. script name '''
     argstr = ' '.join(argv)
     #argstr = argstr.replace('"', '\"')
-    log.debug(argstr)
+    
     os.environ[ENV_CLIARGS] = argstr
     os.environ[ENV_ORGCWD] = os.getcwd()
 
@@ -128,7 +150,11 @@ def getargs():
     args = parser.parse_args(shlex.split(argstr))
 
     args.includes = _splitListOfArgList(args.includes)
-    args.defundef = _parseDefUndefs(args.defundef)
+    #args.defundef = _parseDefUndefs(args.defundef)
+    # reverse some flags for easier to read code 'stay positive'
+    args.usedeps = False if args.nodeps else True
+    args.useguards = False if args.noinclguards else True
+    args.cwd = os.environ[ENV_ORGCWD]
 
     verboseCount = min(args.verbose, len(VERBOSE_TO_LOGLVL)-1) #clamp
     args.loglevel = VERBOSE_TO_LOGLVL[verboseCount]
