@@ -227,24 +227,25 @@ def doEnum(cliargs, srcargs):
     return c, h
 
 def export(outfile, srclines, outtype):
-    if outfile == 'stdout':
+    if not outfile:
+        log.info('No output destination provides?')
         if outtype == 'h':
             print('/* -------- MKENUMSTR DECLARATIONS OUTPUT -------- */')
         else:
             print('/* -------- MKENUMSTR DEFINITONS OUTPUT -------- */')
         for line in srclines:
             print(line)
-    elif outfile is not None:
+    else:
         #TODO check file exists
         log.info('Writing source file %s', outfile)
         with open(outfile,'w') as fh:
             fh.write('\n'.join(srclines))
-    else:
-        log.info('No output destination provides?')
+
+
 
 def main():
     cliargs = envarg.getargs()
-    #log.setLevel(cliargs.loglevel) # FIXME
+    log.setLevel(cliargs.loglevel) # FIXME
     log.debug('-------- GDB --------')
     log.debug(str(cliargs))
     #os.chdir(cliargs.cwd)

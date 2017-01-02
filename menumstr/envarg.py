@@ -28,7 +28,7 @@ parser.add_argument('-ih', '--inh',
 
 parser.add_argument('-oc', '--outc',
     type=str,
-    default='stdout',
+    default='',
     help='Generated definitions output destination.'\
         ' i.e. function body etc '\
         ' that typically goes in a source fle with a .c suffix')
@@ -138,7 +138,7 @@ def setargs(argv):
     ''' argv excluding argv[0] i.e. script name '''
     argstr = ' '.join(argv)
     #argstr = argstr.replace('"', '\"')
-    
+
     os.environ[ENV_CLIARGS] = argstr
     os.environ[ENV_ORGCWD] = os.getcwd()
 
