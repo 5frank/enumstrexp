@@ -199,12 +199,9 @@ def doEnum(cliargs, srcargs):
                     srcargs.fileline)
         sys.exit(2)
 
+    funcstats = codegen.FuncStats(srcargs.funcname)
     #if cliargs.oheader:
     details = kvComments(cliargs, srcargsd, gdbexpr)
-    h.extend(codegen.funcDoxyComment(details=details, **srcargsd))
-    h.extend(codegen.funcPrototype(term=';', **srcargsd))
-    h.append('') #new line
-
     c.extend(codegen.funcDoxyComment(details=details, **srcargsd))
     c.extend(codegen.funcPrototype(term='', **srcargsd))
     c.extend(codegen.funcDefBegin(**srcargsd))
@@ -215,14 +212,20 @@ def doEnum(cliargs, srcargs):
     for ef in enumsfound:
         enumdefs = ef.members
         enumrepr = makeEnumRepr(cliargs, srcargs, enumdefs)
+        funcstats.update(enumrepr)
         comments = [
-            'src:{}'.format(os.path.basename(ef.defsrc)),
+            'src:{}'.format(os.path.basename(ef.defsrc) if ef.defsrc else ''),
             'enum: {} min: {} max:'.format(ef.name, min(ef.members.values()))
             ]
         c.extend(codegen.multilineComment(comments, 2))
         c.extend(codegen.funcDefCases(enumdefs, enumrepr, **srcargsd))
 
     c.extend(codegen.funcDefEnd(**srcargsd))
+
+    h.extend(codegen.funcDoxyComment(details=details, **srcargsd))
+    h.extend(codegen.funcPrototype(term=';', **srcargsd))
+    h.extend(funcstats.getMacros())
+    h.append('') #new line
 
     return c, h
 
@@ -242,7 +245,6 @@ def export(outfile, srclines, outtype):
             fh.write('\n'.join(srclines))
 
 
-
 def main():
     cliargs = envarg.getargs()
     log.setLevel(cliargs.loglevel) # FIXME
@@ -256,13 +258,12 @@ def main():
         h.extend(codegen.includeGuardBegin(cliargs.outh))
 
     #definitions likley depends on these headers
-    #baseincls = [os.path.basename(fp) for fp in cliargs.inh]
-    baseincls = cliargs.inh
+    baseincls = [os.path.basename(fp) for fp in cliargs.inh]
+    #baseincls = cliargs.inh
     #if cliargs.usedeps: #TODO
     h.extend(codegen.includeDirectives(baseincls))
     c.extend(['#define MKENUMSTR_SOURCE'])
     c.extend(codegen.includeDirectives(baseincls))
-
 
     if cliargs.includes:
         includes = codegen.includeDirectives(cliargs.includes)
@@ -271,11 +272,12 @@ def main():
     for ih in cliargs.inh:
         objfile = compileSymbolTable(ih, cliargs.searchdir, cliargs.includes)
         gdbtoolz.loadSymbols(objfile)
-        for srcargs in getSrcArgsList(objfile):
+        srcargsList = getSrcArgsList(objfile)
+        for srcargs in srcargsList:
             _c, _h = doEnum(cliargs, srcargs)
             c.extend(_c)
             h.extend(_h)
-        else:
+        if not srcargsList:
             log.warning('Found nothing to export from %s', ih)
         log.debug('Removing temp file %s', objfile)
         os.remove(objfile)

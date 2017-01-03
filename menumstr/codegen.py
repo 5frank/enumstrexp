@@ -5,6 +5,39 @@ import os
 TABSTYLE = '  '
 tabs = lambda n : n * TABSTYLE
 
+class FuncStats(object):
+    def __init__(self, funcname):
+        self.funcname = funcname
+        self.maxlen = 0
+        self.totlen = 0
+        self.strcnt = 0
+
+    def update(self, enumrepr):
+        ''' enumrepr '''
+        for em in enumrepr:
+            if not em: continue
+            strlen = len(enumrepr[em])
+            self.maxlen = max(self.maxlen, strlen)
+            self.totlen += strlen
+            self.strcnt += 1
+
+    def getMacros(self):
+        def comment(text):
+            return '/** {} */'.format(text)
+        def ppdefine(suffix, value):
+            return '#define {}_{} ({})'.format(self.funcname, suffix, value)
+
+        c = [
+            comment('Length of the longest string. (excl null term)'),
+            ppdefine('MAXLEN', self.maxlen),
+            comment('Total length of all strings combined (excl null term)'),
+            ppdefine('TOTLEN', self.totlen),
+            comment('String count - number of strings in the lookup table'),
+            ppdefine('STRCNT', self.strcnt)
+        ]
+        return c
+
+
 def fileComments(kvcomments=None):
     c = [
     '/** AUTO GENERATED CODE BY MKENUMSTR */'
@@ -136,6 +169,7 @@ def multilineComment(comments=[],tablevel=0, compact=True):
     joinsep = '\n{} * '.format(tabstr)
     return ['{}/* {} */'.format(tabstr, joinsep.join(comments))]
 
+
 def funcDefBegin(usebitpos=False, funcprmsize=4, **kwargs):
     prmname = funcParamName(usebitpos)
     c = ['{']
@@ -146,10 +180,12 @@ def funcDefBegin(usebitpos=False, funcprmsize=4, **kwargs):
         '{}switch({})'.format(tabs(1), prmname),
         '{}{{'.format(tabs(1))# escpae '{' with '{{'
     ])
+
     return c
 
 def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
     c = []
+
     xindent = ''
     def caselblfmt(defname):
         label = defname if usedefs else int(enumdefs[defname])
@@ -158,6 +194,9 @@ def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
     excluded = []
     for defname in sorted(enumdefs, key=enumdefs.get): # sort by value
         strname = enumrepr[defname]
+        if usebitpos and int(enumdefs[defname]) == 0:
+            excluded.append(defname)
+            continue
         if strname is None:
             excluded.append(defname)
             continue

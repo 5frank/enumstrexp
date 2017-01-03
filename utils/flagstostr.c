@@ -45,7 +45,7 @@ int flagstostr(char * dest,
                size_t size,
                const char prefix,
                const char delimiter,
-               const char * (*lookupfunc) (unsigned int),
+               const char * (*lookupfunc) (uint32_t),
                unsigned int flags)
 {
   if (!size || !dest || !lookupfunc)
