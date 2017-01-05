@@ -119,32 +119,6 @@ def nm_findInstances(symbfile, prefix):
 
     return addrs
 
-def makeEnumRepr(cliargs, srcargs, emnumdefs):
-    #log.debug(emnumdefs)
-    if srcargs.strstrip is not None: # none if srcargs.strstrip == ''
-        restrip = re.compile(srcargs.strstrip)
-        stripper = lambda x : restrip.sub('', x)
-
-    elif cliargs.stripcommonprefix:
-        prefix = os.path.commonprefix(emnumdefs.keys())
-        restrip = re.compile('^{}'.format(prefix))
-        stripper = lambda x : restrip.sub('', x)
-
-    else:
-        stripper = lambda x : x
-
-    if srcargs.exclude:
-        reexcl = re.compile(srcargs.exclude)
-        excluder = lambda x : reexcl.search(x) is not None
-    else:
-        excluder = lambda x : False
-
-    enumrepr = {}
-    for name, val in emnumdefs.items():
-        enumrepr[name] = None if excluder(name) else stripper(name)
-
-    return enumrepr
-
 def getSrcArgsList(objfile):
     ''' assumes objfile loaded to gdb prior call '''
     srcargsl = []
@@ -157,31 +131,7 @@ def getSrcArgsList(objfile):
     srcargsl.sort(key=lambda srcargs: srcargs.fileline)
     return srcargsl
 
-def kvComments(cliargs, srcargsd, gdbexpr):
-    srcargsbasename = os.path.basename(srcargsd['filename'])
-    d  = {
-        'gencfg': '{}:{}'.format(srcargsbasename, srcargsd['fileline']),
-        'enum': gdbexpr
-    }
-    return d
-    '''
-    'strstrip': str(srcargsd['strstrip'])
-
-    if cliargs.stripcommonprefix:
-        d['stripcommonprefix'] = 'Yes'
-
-    ignore = ['filename', 'fileline', 'strstrip', 'funcname',
-        'funcprmsize', 'funcprmtype', 'find']
-    for k, v in srcargsd.items():
-        if k in ignore:
-            continue
-        if v:
-            d[k] = v
-    return d
-    '''
-
 def doEnum(cliargs, srcargs):
-    srcargsd = dict(srcargs)
     gdbexpr = srcargs.find if srcargs.find else srcargs.funcprmtype
     c = []
     h = []
@@ -190,23 +140,25 @@ def doEnum(cliargs, srcargs):
         log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
             srcargs.fileline)
         sys.exit(1)
+
     if len(enumsfound) > 1 and not srcargs.mergedefs:
         log.error('Multiple enums found "%s" %s:%d', gdbexpr, srcargs.filename,
                     srcargs.fileline)
         sys.exit(2)
 
+    if len(enumsfound) > 1:
+        enumsfound.sort(key=lambda ef: min(ef.members.values()))
+
     cgesparams = {}
     cgesparams['doxydetails'] = [
         'gencfg: {}:{}'.format(
-            os.path.basename(srcargsd['filename']), srcargsd['fileline']),
+            os.path.basename(srcargs.filename), srcargs.fileline),
         'enum: {}'.format(gdbexpr)
     ]
-
     cgesparams.update(dict(srcargs))
     cgesparams.update(vars(cliargs))
     cgesfunc = codegen.EnumStrFunc(**cgesparams)
-    if len(enumsfound) > 1:
-        enumsfound.sort(key=lambda ef: min(ef.members.values()))
+
     for ef in enumsfound:
         cgesfunc.addEnums(ef.members, ef.defsrc, ef.name)
 
@@ -253,7 +205,6 @@ def main():
     #definitions likley depends on these headers
     baseincls = [os.path.basename(fp) for fp in cliargs.inh]
     #baseincls = cliargs.inh
-    #if cliargs.usedeps: #TODO
     h.extend(codegen.includeDirectives(baseincls))
     c.extend(['#define MKENUMSTR_SOURCE'])
     c.extend(codegen.includeDirectives(baseincls))
