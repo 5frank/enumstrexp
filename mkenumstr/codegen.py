@@ -1,11 +1,63 @@
-import random
-import string
 import os
-
+import re
 TABSTYLE = '  '
 tabs = lambda n : n * TABSTYLE
 
-class FuncStats(object):
+
+def doxyFileComments(fname=None, kvcomments=None):
+    c = ['/**']
+    if fname:
+        basename = os.path.basename(fname)
+        c.append(' * @file {}'.format(os.path.basename(fname)))
+    c.extend([
+        ' * @brief Auto generated code by mkenumstr',
+        ' * @note Take care not modify this file in case it is generated',
+        ' *    by a build script as edits might be overwritten',
+        ' */'
+    ])
+    return c
+
+def includeDirectives(filelist, defundef={}):
+    c = []
+    if defundef:
+        definelines = []
+        undefineslines = []
+        for k, v in defundef.items():
+            definelines.append('#define {} {}'.format(k, v))
+            undefineslines.append('#undef {}'.format(k))
+
+        for inclfile in filelist:
+            include = '#include "{}"'.format(inclfile)
+            c.extend(definelines)
+            c.append(include)
+            c.extend(undefineslines)
+    else:
+        c = ['#include "{}"'.format(hf) for hf in filelist]
+
+    return c
+
+class IncludeGuard(object):
+
+    def __init__(self, fname, suffix='_INCLUDE_H_'):
+        if fname:
+            basename = os.path.basename(fname).split('.')[0].upper()
+        else:
+            basename = 'UNKNOWN_OUTFILE'
+        self.defname = '{}{}'.format(basename, suffix)
+
+    def guardBegin(self):
+        return [
+            '#ifndef {}'.format(self.defname),
+            '#define {}'.format(self.defname),
+            ''
+        ]
+
+    def guardEnd(self):
+        #will alos add extra lb at end of file
+        return ['#endif /*END: {} */'.format(self.defname), '']
+
+
+class _EnumStrFuncStats(object):
     def __init__(self, funcname):
         self.funcname = funcname
         self.maxlen = 0
@@ -43,204 +95,284 @@ class FuncStats(object):
 
         c = [
         #'enum {}_e{ '.format(self.funcname),
-        'enum {',
-        comment.format('All strlen excl null term(s)'),
-        #comment.format('Length of the longest string. (excl null term)'),
+
+        'enum { // All strlen excl null term(s)',
         symbdef.format('MAXLEN', self.maxlen, ',', 'Longest string'),
-        #comment.format('Total length of all strings combined (excl null term)'),
         symbdef.format('TOTLEN', self.totlen, ',', 'All combined'),
-        #comment.format('String count - number of strings in the lookup table'),
         symbdef.format('STRCNT', self.strcnt, ' ', 'Number of strings'),
         '};',]
         return c
 
+class BitPosMacro(object):
+    def __init__(self, funcprmsize):
+        ''' @param size - the size of the function parameter '''
+        self.numbits = funcprmsize * 8 #almost alwyas 8 bits per char
 
-def fileComments(kvcomments=None):
-    c = [
-    '/** AUTO GENERATED CODE BY MKENUMSTR */'
-    ]
-    return c
+    def getDefines(self):
+        c = [
+            tabs(1) + '/** Bit Mask Compare */',
+            tabs(1) + '#define MSKCMP(X, POS) ((X) == (1u << POS)) ? POS :',
+            tabs(1) + '/** single bit set or duplicate case value error */',
+            tabs(1) + '#define BITPOS_INVALID_DEFAULT ({})'.format(self.numbits),
+            tabs(1) + '/** Better jumptable from cases */',
+            tabs(1) + '#define BITPOS(X) (\\']
 
-def includeDirectives(filelist, defundef={}):
-    c = []
-    if defundef:
-        definelines = []
-        undefineslines = []
-        for k, v in defundef.items():
-            definelines.append('#define {} {}'.format(k, v))
-            undefineslines.append('#undef {}'.format(k))
+        fmt = tabs(2) + 'MSKCMP(X, {:>2}u) ' * 4 + '\\'
 
-        for inclfile in filelist:
-            include = '#include "{}"'.format(inclfile)
-            c.extend(definelines)
-            c.append(include)
-            c.extend(undefineslines)
-    else:
-        c = ['#include "{}"'.format(hf) for hf in filelist]
+        for i in range(0, self.numbits, 8):
+            c.extend([
+                fmt.format(i+0, i+1, i+2, i+3),
+                fmt.format(i+4, i+5, i+6, i+7)
+            ])
 
-    return c
+        c.extend([tabs(2) + 'BITPOS_INVALID_DEFAULT)', ''])
 
-def bitposMacroDefine(size):
-    c = [
-        tabs(1) + '/** Bit Mask Compare */',
-        tabs(1) + '#define MSKCMP(X, POS) ((X) == (1u << POS)) ? POS :',
-        tabs(1) + '/** single bit set or duplicate case value error */',
-        tabs(1) + '#define BITPOS_INVALID_DEFAULT ({})'.format(size * 8),
-        tabs(1) + '/** Better jumptable from cases */',
-        tabs(1) + '#define BITPOS(X) (\\']
+        return c
 
-    fmt = tabs(2) + 'MSKCMP(X, {:>2}u) ' * 4 + '\\'
+    def getUndefs():
+        c = [
+            tabs(1) + '#undef MSKCMP',
+            tabs(1) + '#undef BITPOS_INVALID_DEFAULT',
+            tabs(1) + '#undef BITPOS']
+        return c
 
-    for i in range(0, size * 8, 8):
+    def caseLblFmt(defname):
+        return 'BITPOS({})'.format(defname)
+
+    def caseDefault():
+        return 'BITPOS_INVALID_DEFAULT'
+
+class _Enums(object):
+    ''' Continer of orginal enum definitions, values and string representation
+    to be used in generated code '''
+    def __init__(self, enumdefs, defsrc='', name=''):
+        self.enumdefs = enumdefs # {<enum_def_name> : <value>, ...}
+        #self.enumrepr = enumrepr # {<enum_def_name> : <string_repr>, ...}
+        self.defsrc = defsrc
+        self.name = name
+
+    def getComment(self, tablvl=0):
+        defsrc = os.path.basename(self.defsrc) if self.defsrc else ''
+        enMinVal = min(self.enumdefs.values())
+        enMaxVal = max(self.enumdefs.values())
+        comments = [
+            '{}/* defsrc:{}'.format(tabs(tablvl), defsrc),
+            '{} * enum: {} min: {} max: {} */ '.format(
+            tabs(tablvl), self.name, enMinVal, enMaxVal)
+        ]
+        return comments
+
+
+'''
+class EnumStrFuncOpts(object):
+    def __init__(self, **kwargs):
+        # TODO sanity check and happy linter
+
+        self.funcprmname = funcprmname
+        self.funcprmtype = funcprmtype
+        self.funcprmsize = funcprmsize
+        self.funcname = funcname
+        self.usebitpos = usebitpos
+        #for k, v i kwargs.items():
+
+        self.__dict__.update(kwargs)
+                if not self.funcprmname:
+                    self.funcprmname = 'bitpos' if self.usebitpos else 'value'
+
+    def __iter__(self):
+        for k,v in self.__dict__.items():
+            yield k,v
+
+    def __str__(self):
+        return str(self.__dict__)
+'''
+
+class EnumStrFunc(object):
+    ''' Generate a Enum to c-string lookup function.
+    all code generator functions return list(s) of containing lines of code
+    or comments.
+    '''
+    def __init__(self,
+                funcname,
+                funcprmtype,
+                funcprmsize=4,
+                funcprmname=None,
+                usebitpos=False,
+                usedefs=True,
+                strstrip=None,
+                stripcommonprefix=False,
+                exclude=None,
+                doxydetails=[],
+                **kwargs):
+
+        self.funcprmname = funcprmname
+        self.funcprmtype = funcprmtype
+        self.funcprmsize = funcprmsize
+        self.funcname = funcname
+        self.usebitpos = usebitpos
+        self.usedefs = usedefs
+        self.strstrip = strstrip
+        self.stripcommonprefix = stripcommonprefix
+        self.exclude = exclude
+        self.doxydetails = doxydetails
+        self.nameunknown='??'
+        #self.opts = EnumStrFuncOpts(kwargs)
+        self._enums = []
+        #if usebitpos:
+        if not self.funcprmname:
+            self.funcprmname = 'bitpos' if usebitpos else 'value'
+        self.bitposmacro = BitPosMacro(self.funcprmsize)
+
+    def addEnums(self, enumdefs, defsrc='', name=''):
+        ''' add/append enums for export.
+        @param enumdefs must be dict with (<enum_name> : <int_value>,...}
+        '''
+        #enumrepr = self.createEnumRepr(enumdefs)
+        self._enums.append(_Enums(enumdefs, defsrc, name))
+
+    def createEnumRepr(self, emnumdefs):
+        #log.debug(emnumdefs)
+        if self.strstrip is not None: # none if self.strstrip == ''
+            restrip = re.compile(self.strstrip)
+            stripper = lambda x : restrip.sub('', x)
+
+        elif self.stripcommonprefix:
+            prefix = os.path.commonprefix(emnumdefs.keys())
+            restrip = re.compile('^{}'.format(prefix))
+            stripper = lambda x : restrip.sub('', x)
+
+        else:
+            stripper = lambda x : x
+
+        if self.exclude:
+            reexcl = re.compile(self.exclude)
+            excluder = lambda x : reexcl.search(x) is not None
+        else:
+            excluder = lambda x : False
+
+        enumrepr = {}
+        for name, val in emnumdefs.items():
+            enumrepr[name] = None if excluder(name) else stripper(name)
+
+        return enumrepr
+
+    def funcDoxyComment(self):
+        c = []
+
+        if self.usebitpos:
+            briefdoc = 'Enum bit flag index to string lookup'
+            paramdoc = 'bit position index representing a enum flag. (LSB == 0)'
+        else:
+            briefdoc = 'Enum value to string lookup.'
+            paramdoc = 'enum value.'
+
         c.extend([
-            fmt.format(i+0, i+1, i+2, i+3),
-            fmt.format(i+4, i+5, i+6, i+7)
+            '/**',
+            ' * @brief Generated code by mkenumstr. {}'.format(briefdoc),
+            ' * @param {} - {}'.format(self.funcprmname, paramdoc)
         ])
 
-    c.extend([tabs(2) + 'BITPOS_INVALID_DEFAULT)', ''])
+        if self.doxydetails:
+            c.append(' * @details')
+            for line in self.doxydetails:
+                c.append(' *   {}'.format(line))
+        c.append(' */')
+        return c
 
-    return c
+    def funcPrototype(self, term):
+        prototype = 'const char * {func}({prmtype} {prmname}){term}'.format(
+                            func=self.funcname,
+                            prmtype=self.funcprmtype,
+                            prmname=self.funcprmname,
+                            term=term)
 
-def bitposMacroCaseLbl(defname):
-    return 'BITPOS({})'.format(defname)
+        return [prototype]
 
-def bitposMacroDefault():
-    return 'BITPOS_INVALID_DEFAULT'
+    def funcDefBegin(self):
 
-def bitposMacroUndef():
-    c = [
-        tabs(1) + '#undef MSKCMP',
-        tabs(1) + '#undef BITPOS_INVALID_DEFAULT',
-        tabs(1) + '#undef BITPOS']
+        c = ['{']
+        if self.usebitpos:
+            c.extend(self.bitposmacro.getDefines())
 
-    return c
-
-def includeGuardBegin(fname, suffix = '_INCLUDE_H_'):
-    if fname:
-        #basename = os.path.basename(fname).replace('.', '_').upper()
-        basename = os.path.basename(fname).split('.')[0].upper()
-
-    else:
-        #randchars = (random.choice(string.ascii_uppercase) for c in range(8))
-        #defname = 'UNKNOWN_OUTFILE_{}{}'.format(''.join(randchars), suffix)
-        basename = 'UNKNOWN_OUTFILE'
-    defname = '{}{}'.format(basename, suffix)
-
-    c = [
-        '#ifndef {}'.format(defname),
-        '#define {}'.format(defname),
-        '']
-    return c
-
-def includeGuardEnd():
-    return ['#endif /* END include guard */', ''] #extra lb at end of file
-
-def funcParamName(usebitpos=False):
-    return 'bitpos' if usebitpos else 'value'
-
-def singlelineComment(comment, tablevel=0):
-    return ['{}/*{}*/'.format(tabs(tablevel), comment)]
-
-def funcDoxyComment(details={}, usebitpos=False, **kwargs):
-    c = []
-    prmname = funcParamName(usebitpos)
-
-    if usebitpos:
-        brief = 'Enum bit flag index to string lookup'
-        param = 'bit position index representing a enum flag. (LSB == 0)'
-    else:
-
-        brief = 'Enum value to string lookup.'
-        param = 'enum value.'
-    c.extend([
-        '/**',
-        ' * @brief {}'.format(brief),
-        ' * @note  Auto generated code.',
-        ' * @param {} - {}'.format(prmname, param)
-    ])
-
-    if details:
-        c.append(' * @details')
-        for tag, comment in details.items():
-            c.append(' *   {} {}'.format(tag, comment))
-    c.append(' */')
-    return c
-
-def funcPrototype(funcname, funcprmtype, usebitpos=False, term='', **kwargs):
-    prmname = funcParamName(usebitpos)
-    prototype = 'const char * {func}({prmtype} {prmname}){term}'.format(
-                        func=funcname,
-                        prmtype=funcprmtype,
-                        prmname=prmname,
-                        term=term)
-
-    return [prototype]
-
-def multilineComment(comments=[],tablevel=0, compact=True):
-    #s = '{}/* '.format(tabs(tablevel))
-    #for cm in comments:
-    #    s += '{}* {}'.format(tabs(tablevel), cm))
-    #commentlines = ['{}* {}'.format(tabs(tablevel), x) for x in comments]
-    tabstr = tabs(tablevel)
-    joinsep = '\n{} * '.format(tabstr)
-    return ['{}/* {} */'.format(tabstr, joinsep.join(comments))]
-
-
-def funcDefBegin(usebitpos=False, funcprmsize=4, **kwargs):
-    prmname = funcParamName(usebitpos)
-    c = ['{']
-    if usebitpos:
-        c.extend(bitposMacroDefine(funcprmsize))
-
-    c.extend([
-        '{}switch({})'.format(tabs(1), prmname),
-        '{}{{'.format(tabs(1))# escpae '{' with '{{'
-    ])
-
-    return c
-
-def funcDefCases(enumdefs, enumrepr, usedefs=True, usebitpos=False, **kwargs):
-    c = []
-
-    xindent = ''
-    def caselblfmt(defname):
-        label = defname if usedefs else int(enumdefs[defname])
-        return bitposMacroCaseLbl(label) if usebitpos else label
-
-    excluded = []
-    for defname in sorted(enumdefs, key=enumdefs.get): # sort by value
-        strname = enumrepr[defname]
-        if usebitpos and int(enumdefs[defname]) == 0:
-            excluded.append(defname)
-            continue
-        if strname is None:
-            excluded.append(defname)
-            continue
         c.extend([
-            '{}case {}:'.format(tabs(2), caselblfmt(defname)),
-            '{}return {}"{}";'.format(tabs(3), xindent, strname)
+            '{}switch({})'.format(tabs(1), self.funcprmname),
+            '{}{{'.format(tabs(1))# escpae '{' with '{{'
         ])
 
-    for defname in excluded:
-        c.extend([
+        return c
+
+    def funcDefCases(self, enumdefs, enumrepr):
+        c = []
+
+        xindent = ''
+        def caselblfmt(defname):
+            label = defname if self.usedefs else int(enumdefs[defname])
+            if self.usebitpos:
+                label = self.bitposmacro.caseLblFmt(label)
+            return label
+
+        excluded = []
+        for defname in sorted(enumdefs, key=enumdefs.get): # sort by value
+            strname = enumrepr[defname]
+            if self.usebitpos and int(enumdefs[defname]) == 0:
+                excluded.append(defname)
+                continue
+            if strname is None:
+                excluded.append(defname)
+                continue
+            c.extend([
+                '{}case {}:'.format(tabs(2), caselblfmt(defname)),
+                '{}return {}"{}";'.format(tabs(3), xindent, strname)
+            ])
+
+        for defname in excluded:
+            c.extend([
             '{}/* case {}:  excluded */'.format(tabs(2), caselblfmt(defname))
+            ])
+
+        return c
+
+
+    def funcDefEnd(self):
+        c = []
+        if self.usebitpos:
+            label = self.bitposmacro.caseDefault()
+            c.append('{}case {}:'.format(tabs(2), label))
+
+        c.extend([
+            '{}default:'.format(tabs(2)),
+            '{}return "{}";'.format(tabs(3), self.nameunknown),
+            '{}}}'.format(tabs(1)) # escpae '}' with '}}'
         ])
+        # ---- END switch case -----
+        if self.usebitpos:
+            c.extend(self.bitposmacro.getUndefs())
 
-    return c
+        c.append('}')
+        return c
 
-def funcDefEnd(usebitpos=False, nameunknown='??', **kwargs):
-    c = []
-    if usebitpos:
-        c.append('{}case {}:'.format(tabs(2), bitposMacroDefault()))
+    def generate(self):
+        c = []
+        h = []
 
-    c.extend([
-        '{}default:'.format(tabs(2)),
-        '{}return "{}";'.format(tabs(3), nameunknown),
-        '{}}}'.format(tabs(1)) # escpae '}' with '}}'
-    ])
-    # ---- END switch case -----
-    if usebitpos:
-        c.extend(bitposMacroUndef())
+        if len(self._enums) > 1:
+            self._enums.sort(key=lambda en: min(en.enumdefs.values()))
+        doxycomments = self.funcDoxyComment()
+        c.extend(doxycomments)
+        c.extend(self.funcPrototype(term=''))
+        c.extend(self.funcDefBegin())
+        funcstats = _EnumStrFuncStats(self.funcname)
+        for en in self._enums:
+            enumrepr = self.createEnumRepr(en.enumdefs)
+            funcstats.update(enumrepr)
+            c.extend(en.getComment(tablvl=2))
+            c.extend(self.funcDefCases(en.enumdefs, enumrepr))
 
-    c.append('}')
-    return c
+        c.extend(self.funcDefEnd())
+
+        h.extend(doxycomments)
+        h.extend(funcstats.getEnums())
+        h.extend(self.funcPrototype(term=';'))
+        h.append('') #new line
+
+        return c, h

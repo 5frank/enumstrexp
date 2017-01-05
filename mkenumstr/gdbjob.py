@@ -195,35 +195,22 @@ def doEnum(cliargs, srcargs):
                     srcargs.fileline)
         sys.exit(2)
 
-    funcstats = codegen.FuncStats(srcargs.funcname)
-    #if cliargs.oheader:
-    details = kvComments(cliargs, srcargsd, gdbexpr)
-    c.extend(codegen.funcDoxyComment(details=details, **srcargsd))
-    c.extend(codegen.funcPrototype(term='', **srcargsd))
-    c.extend(codegen.funcDefBegin(**srcargsd))
+    cgesparams = {}
+    cgesparams['doxydetails'] = [
+        'gencfg: {}:{}'.format(
+            os.path.basename(srcargsd['filename']), srcargsd['fileline']),
+        'enum: {}'.format(gdbexpr)
+    ]
 
+    cgesparams.update(dict(srcargs))
+    cgesparams.update(vars(cliargs))
+    cgesfunc = codegen.EnumStrFunc(**cgesparams)
     if len(enumsfound) > 1:
         enumsfound.sort(key=lambda ef: min(ef.members.values()))
-
     for ef in enumsfound:
-        enumdefs = ef.members
-        enumrepr = makeEnumRepr(cliargs, srcargs, enumdefs)
-        funcstats.update(enumrepr)
-        comments = [
-            'src:{}'.format(os.path.basename(ef.defsrc) if ef.defsrc else ''),
-            'enum: {} min: {} max:'.format(ef.name, min(ef.members.values()))
-            ]
-        c.extend(codegen.multilineComment(comments, 2))
-        c.extend(codegen.funcDefCases(enumdefs, enumrepr, **srcargsd))
+        cgesfunc.addEnums(ef.members, ef.defsrc, ef.name)
 
-    c.extend(codegen.funcDefEnd(**srcargsd))
-
-    h.extend(codegen.funcDoxyComment(details=details, **srcargsd))
-    h.extend(codegen.funcPrototype(term=';', **srcargsd))
-    h.extend(funcstats.getEnums())
-    h.append('') #new line
-
-    return c, h
+    return cgesfunc.generate()
 
 def export(outfile, srclines, outtype):
     if not outfile:
@@ -256,8 +243,12 @@ def main():
 
     c = []#c code source lines
     h = []#h header declear
+
+    h.extend(codegen.doxyFileComments(cliargs.outh))
+    c.extend(codegen.doxyFileComments(cliargs.outc))
+    inclguard = codegen.IncludeGuard(cliargs.outh)
     if cliargs.useguards:
-        h.extend(codegen.includeGuardBegin(cliargs.outh))
+        h.extend(inclguard.guardBegin())
 
     #definitions likley depends on these headers
     baseincls = [os.path.basename(fp) for fp in cliargs.inh]
@@ -286,7 +277,7 @@ def main():
         os.remove(objfile)
 
     if cliargs.useguards:
-        h.extend(codegen.includeGuardEnd())
+        h.extend(inclguard.guardEnd())
 
     export(cliargs.outc, c, 'c')
     export(cliargs.outh, h, 'h')
