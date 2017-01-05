@@ -30,9 +30,12 @@ def main():
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     (out, err) = p.communicate()
     if p.returncode != 0:
-        log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
+        #log.debug('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
         return 1
-    print(out.decode('ascii')) #py3 as subprocess return bytes not str
+    if out:
+        print(out.decode('ascii')) #py3 as subprocess return bytes not str
+    if err:
+        print(err.decode('ascii')) #py3 as subprocess return bytes not str
     return p.returncode
 
 if __name__ == '__main__':

@@ -12,10 +12,6 @@ log = logging.getLogger(os.path.basename(__file__))
 ENV_CLIARGS = 'MKENUMSTR_CLIARGS'
 ENV_ORGCWD = 'MKENUMSTR_ORGCWD'
 
-VERBOSE_TO_LOGLVL = [
-    logging.WARNING,
-    logging.INFO,
-    logging.DEBUG]
 
 parser = argparse.ArgumentParser()
 
@@ -155,9 +151,7 @@ def getargs():
     args.usedeps = False if args.nodeps else True
     args.useguards = False if args.noinclguards else True
     args.cwd = os.environ[ENV_ORGCWD]
-
-    verboseCount = min(args.verbose, len(VERBOSE_TO_LOGLVL)-1) #clamp
-    args.loglevel = VERBOSE_TO_LOGLVL[verboseCount]
+    args.loglevel = logging.DEBUG if args.verbose else logging.INFO
     return args
 
 def cwdfullpath(p):

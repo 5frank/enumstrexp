@@ -18,12 +18,6 @@ import gdbtoolz
 
 log = logging.getLogger(os.path.basename(__file__))
 
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    stream=sys.stderr, #allows shell pipe of stdout
-    format='%(levelname)s:%(name)s:%(lineno)04d: %(message)s')
-
 class SrcArgsNamespace(object):
     def __init__(self, adict):
         self.__dict__.update(adict)
@@ -31,6 +25,9 @@ class SrcArgsNamespace(object):
     def __iter__(self):
         for k,v in self.__dict__.items():
             yield k,v
+    def __str__(self):
+        return str(self.__dict__)
+
 
 def relToFullPath(p):
     return os.path.join(THIS_DIR, p)
@@ -124,7 +121,6 @@ def nm_findInstances(symbfile, prefix):
 
 def makeEnumRepr(cliargs, srcargs, emnumdefs):
     #log.debug(emnumdefs)
-
     if srcargs.strstrip is not None: # none if srcargs.strstrip == ''
         restrip = re.compile(srcargs.strstrip)
         stripper = lambda x : restrip.sub('', x)
@@ -224,7 +220,7 @@ def doEnum(cliargs, srcargs):
 
     h.extend(codegen.funcDoxyComment(details=details, **srcargsd))
     h.extend(codegen.funcPrototype(term=';', **srcargsd))
-    h.extend(funcstats.getMacros())
+    h.extend(funcstats.getEnums())
     h.append('') #new line
 
     return c, h
@@ -247,7 +243,13 @@ def export(outfile, srclines, outtype):
 
 def main():
     cliargs = envarg.getargs()
-    log.setLevel(cliargs.loglevel) # FIXME
+    #log.setLevel(cliargs.loglevel) # FIXME
+
+    logging.basicConfig(
+        level=cliargs.loglevel, #logging.DEBUG,
+        stream=sys.stderr, #allows shell pipe of stdout
+        format='mkenumstr:%(levelname)s:%(name)s:%(lineno)04d: %(message)s')
+
     log.debug('-------- GDB --------')
     log.debug(str(cliargs))
     #os.chdir(cliargs.cwd)
@@ -274,6 +276,7 @@ def main():
         gdbtoolz.loadSymbols(objfile)
         srcargsList = getSrcArgsList(objfile)
         for srcargs in srcargsList:
+            log.debug(srcargs)
             _c, _h = doEnum(cliargs, srcargs)
             c.extend(_c)
             h.extend(_h)

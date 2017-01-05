@@ -15,7 +15,7 @@ class FuncStats(object):
     def update(self, enumrepr):
         ''' enumrepr '''
         for em in enumrepr:
-            if not em: continue
+            if enumrepr[em] is None: continue
             strlen = len(enumrepr[em])
             self.maxlen = max(self.maxlen, strlen)
             self.totlen += strlen
@@ -35,6 +35,23 @@ class FuncStats(object):
             comment('String count - number of strings in the lookup table'),
             ppdefine('STRCNT', self.strcnt)
         ]
+        return c
+
+    def getEnums(self):
+        comment = '/* {} */'
+        symbdef = tabs(1) + self.funcname + '_{} = {:>4}{} //!< {}'
+
+        c = [
+        #'enum {}_e{ '.format(self.funcname),
+        'enum {',
+        comment.format('All strlen excl null term(s)'),
+        #comment.format('Length of the longest string. (excl null term)'),
+        symbdef.format('MAXLEN', self.maxlen, ',', 'Longest string'),
+        #comment.format('Total length of all strings combined (excl null term)'),
+        symbdef.format('TOTLEN', self.totlen, ',', 'All combined'),
+        #comment.format('String count - number of strings in the lookup table'),
+        symbdef.format('STRCNT', self.strcnt, ' ', 'Number of strings'),
+        '};',]
         return c
 
 
@@ -62,7 +79,6 @@ def includeDirectives(filelist, defundef={}):
         c = ['#include "{}"'.format(hf) for hf in filelist]
 
     return c
-
 
 def bitposMacroDefine(size):
     c = [

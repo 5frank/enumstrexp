@@ -23,10 +23,10 @@ struct mkenumstr_job_s
   const char * funcname;
   const char * funcprmtype;
   unsigned int funcprmsize;
-
+  const char * argsstr;
   const char * strstrip;
   const char * exclude;
-  unsigned int joindup;
+  //unsigned int joindup;
 
   unsigned int mergedefs;
   unsigned int usebitpos;
@@ -36,7 +36,7 @@ struct mkenumstr_job_s
 #define MKENUMSTR_FUNC(FUNC_NAME, FUNC_PRMT, ...) \
 static volatile struct mkenumstr_job_s MKENUMSTR_UNIQUE(__LINE__) = \
 { \
-  .funcname = MKENUMSTR_STRINGIFY(FUNC_NAME), \
+  .funcname    = MKENUMSTR_STRINGIFY(FUNC_NAME), \
   .funcprmtype = MKENUMSTR_STRINGIFY(FUNC_PRMT), \
   .funcprmsize = sizeof(FUNC_PRMT), \
   .filename = __FILE__, \
