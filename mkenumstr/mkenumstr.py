@@ -9,35 +9,28 @@ from pprint import pprint
 import logging
 log = logging.getLogger(os.path.basename(__file__))
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    stream=sys.stderr,
-    format='%(levelname)s:%(name)s:%(lineno)04d: %(message)s',
-    disable_existing_loggers=False)
-
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(THIS_DIR) #
+sys.path.append(THIS_DIR)
 import envarg
 
-
-def relToFullPath(p):
-    return os.path.join(THIS_DIR, p)
-
 def main():
-    envarg.setargs(sys.argv[1:])
+    '''
+    Currently, can only invoke python from GDB.
+    '''
+    envarg.setargs(sys.argv[1:]) # used by the gdb process.
 
-    cmd = ['gdb', '-n', '-silent', '-batch', '-x', relToFullPath('gdbjob.py')]
+    xpath = os.path.join(THIS_DIR,('gdbjob.py')
+    cmd = ['gdb', '-n', '-silent', '-batch', '-x', xpath]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     (out, err) = p.communicate()
     if p.returncode != 0:
-        #log.debug('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
-        return 1
+        pass # errors should already been printed by the subprocess
     if out:
-        print(out.decode('ascii')) #py3 as subprocess return bytes not str
+        print(out.decode('ascii')) # py3 as subprocess return bytes not str
     if err:
-        print(err.decode('ascii')) #py3 as subprocess return bytes not str
+        print(err.decode('ascii')) # py3 as subprocess return bytes not str
+
     return p.returncode
 
 if __name__ == '__main__':
-
-    main()
+    sys.exit(main())

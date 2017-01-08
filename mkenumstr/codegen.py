@@ -4,7 +4,7 @@ TABSTYLE = '  '
 tabs = lambda n : n * TABSTYLE
 
 
-def doxyFileComments(fname=None, kvcomments=None):
+def fileDoxyComment(fname=None, kvcomments=None):
     c = ['/**']
     if fname:
         basename = os.path.basename(fname)
@@ -39,6 +39,10 @@ def includeDirectives(filelist, defundef={}):
 class IncludeGuard(object):
 
     def __init__(self, fname, suffix='_INCLUDE_H_'):
+        '''
+        Conforms to the standard practice and creates include
+        guard macro named after the filename
+        '''
         if fname:
             basename = os.path.basename(fname).split('.')[0].upper()
         else:
@@ -58,6 +62,8 @@ class IncludeGuard(object):
 
 
 class _EnumStrFuncStats(object):
+    ''' Used internaly to create 'statistics' about generated
+    lookup function. '''
     def __init__(self, funcname):
         self.funcname = funcname
         self.maxlen = 0
@@ -93,19 +99,27 @@ class _EnumStrFuncStats(object):
         comment = '/* {} */'
         symbdef = tabs(1) + self.funcname + '_{} = {:>4}{} //!< {}'
 
-        c = [
-        #'enum {}_e{ '.format(self.funcname),
-
-        'enum { // All strlen excl null term(s)',
-        symbdef.format('MAXLEN', self.maxlen, ',', 'Longest string'),
-        symbdef.format('TOTLEN', self.totlen, ',', 'All combined'),
-        symbdef.format('STRCNT', self.strcnt, ' ', 'Number of strings'),
-        '};',]
+        c = ['enum { // All strlen excl null term(s)',
+            symbdef.format('MAXLEN', self.maxlen, ',', 'Longest string'),
+            symbdef.format('TOTLEN', self.totlen, ',', 'All combined'),
+            symbdef.format('STRCNT', self.strcnt, ' ', 'Number of strings'),
+            '};',
+        ]
         return c
 
 class BitPosMacro(object):
+    '''
+    Generate Macros to covert a bit flag enum (example 1<<2) to bit index
+    at compile time. Will generate different macros depending on
+    bit flag size.
+    Using bitpos macro makes generated code more transparent/readable as
+    the original enums can be used instad of magic numbers.
+    It also follows 'signgle point of truth'.
+    '''
     def __init__(self, funcprmsize):
-        ''' @param size - the size of the function parameter '''
+        '''
+        @parameters:
+            funcprmsize - str. the size of the function parameter '''
         self.numbits = funcprmsize * 8 #almost alwyas 8 bits per char
 
     def getDefines(self):
@@ -137,9 +151,15 @@ class BitPosMacro(object):
         return c
 
     def caseLblFmt(defname):
+        ''' wrap a enum name in the bitpos macro '''
         return 'BITPOS({})'.format(defname)
 
     def caseDefault():
+        ''' the return value should be added togheter with the default
+        case and will give a compiletime error on duplicate case value
+        iff any enum have a invalid bit flag value. i.e. more then one bit
+        set or zero
+        '''
         return 'BITPOS_INVALID_DEFAULT'
 
 class _Enums(object):
@@ -162,35 +182,11 @@ class _Enums(object):
         ]
         return comments
 
-
-'''
-class EnumStrFuncOpts(object):
-    def __init__(self, **kwargs):
-        # TODO sanity check and happy linter
-
-        self.funcprmname = funcprmname
-        self.funcprmtype = funcprmtype
-        self.funcprmsize = funcprmsize
-        self.funcname = funcname
-        self.usebitpos = usebitpos
-        #for k, v i kwargs.items():
-
-        self.__dict__.update(kwargs)
-                if not self.funcprmname:
-                    self.funcprmname = 'bitpos' if self.usebitpos else 'value'
-
-    def __iter__(self):
-        for k,v in self.__dict__.items():
-            yield k,v
-
-    def __str__(self):
-        return str(self.__dict__)
-'''
-
 class EnumStrFunc(object):
     ''' Generate a Enum to c-string lookup function.
     all code generator functions return list(s) of containing lines of code
     or comments.
+    if some o
     '''
     def __init__(self,
                 funcname,
@@ -204,7 +200,22 @@ class EnumStrFunc(object):
                 exclude=None,
                 doxydetails=[],
                 **kwargs):
-
+        '''
+        init will only set up options. assumes enums to be added later.
+        If some parameters are bad, and not checked for, it should give
+        a error when trying to compile the gereated code
+        Parameters:
+            funcname - symbol name on generated function
+            funcprmtype -
+            funcprmsize - int. must be a power of two
+            usebitpos   - bool. use bit position/index as functin param
+            usedefs - bool. use orignal enum definiton (not magic numbes)
+            strstrip - regexp str. remove prefix etc from string name(s)
+            stripcommonprefix - automagically remove common prefix
+            exclude - regexpstr. exlude enum from generated lookup table
+            doxydetails - details to be added in doxgen commet
+            **kwargs - allows dict with unusd keys to be used as params
+        '''
         self.funcprmname = funcprmname
         self.funcprmtype = funcprmtype
         self.funcprmsize = funcprmsize
@@ -215,7 +226,7 @@ class EnumStrFunc(object):
         self.stripcommonprefix = stripcommonprefix
         self.exclude = exclude
         self.doxydetails = doxydetails
-        self.nameunknown='??'
+        self.nameunknown = '??'
         #self.opts = EnumStrFuncOpts(kwargs)
         self._enums = []
         #if usebitpos:
@@ -224,8 +235,12 @@ class EnumStrFunc(object):
         self.bitposmacro = BitPosMacro(self.funcprmsize)
 
     def addEnums(self, enumdefs, defsrc='', name=''):
-        ''' add/append enums for export.
-        @param enumdefs must be dict with (<enum_name> : <int_value>,...}
+        '''
+        Add/append enums for export.
+        Parameters:
+            enumdefs - dict. (<enum_name> : <int_value>,...}
+            defsrc - str. file  where enum defined
+            name - str. name of enum (only used in comments)
         '''
         #enumrepr = self.createEnumRepr(enumdefs)
         self._enums.append(_Enums(enumdefs, defsrc, name))
@@ -302,6 +317,12 @@ class EnumStrFunc(object):
         return c
 
     def funcDefCases(self, enumdefs, enumrepr):
+        '''
+        Allows multiple calls, will only add cases.
+        Parameters:
+            enumdefs - dict. {<enum_def_name> : <value>, ...}
+            enumrepr - dict. {<enum_def_name> : <string_repr>, ...}
+        '''
         c = []
 
         xindent = ''
@@ -332,7 +353,6 @@ class EnumStrFunc(object):
 
         return c
 
-
     def funcDefEnd(self):
         c = []
         if self.usebitpos:
@@ -352,6 +372,7 @@ class EnumStrFunc(object):
         return c
 
     def generate(self):
+        ''' Get generated code '''
         c = []
         h = []
 

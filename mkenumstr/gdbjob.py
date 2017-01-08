@@ -8,7 +8,7 @@ import tempfile
 import sys
 from pprint import pprint
 
-#needed as python invoked by gdb
+# needed as python invoked by gdb
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(THIS_DIR) #
 
@@ -23,8 +23,9 @@ class SrcArgsNamespace(object):
         self.__dict__.update(adict)
 
     def __iter__(self):
-        for k,v in self.__dict__.items():
-            yield k,v
+        for k, v in self.__dict__.items():
+            yield k, v
+
     def __str__(self):
         return str(self.__dict__)
 
@@ -33,6 +34,10 @@ def relToFullPath(p):
     return os.path.join(THIS_DIR, p)
 
 def compileSymbolTable(ifile, searchdirs=[], includes=[]):
+    '''
+    Symbol table used to parse MKENUNSTR_FUNC() macro parameters
+    and get enum values.
+    '''
     TMP_FILE_PREFIX = 'mkenumstr_tmpfile_'
     tmpc = tempfile.NamedTemporaryFile(
             prefix=TMP_FILE_PREFIX,
@@ -60,31 +65,28 @@ def compileSymbolTable(ifile, searchdirs=[], includes=[]):
         '-I', THIS_DIR
     ]
     for inclfile in includes:
-        #cmd.extend(['-I', os.path.abspath(incldir)])
-        #cmd.extend(['-I', relToFullPath(incldir)])
         cmd.extend(['-include', inclfile])
 
     for incldir in searchdirs:
-        #cmd.extend(['-I', os.path.abspath(incldir)])
-        #cmd.extend(['-I', relToFullPath(incldir)])
         cmd.extend(['-I', incldir])
-    #pprint(cmd)
 
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     (out, err) = p.communicate()
+
     if p.returncode != 0:
-        if out is None: out = ''
-        if err is None: err = ''
-        print('#error "E: Failed to compile symbol table"')
-        log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
-        sys.exit(1)
+        log.error('Failed to compile symbol table"')
         objfile = None
+    if out:
+        log.info(out.decode('ascii')) # py3 as subprocess return bytes not str
+    if err:
+        log.error(err.decode('ascii')) # py3 as subprocess return bytes not str
 
     log.debug('Removing temp srcfile %s', srcfile)
     os.remove(srcfile)
+
     return objfile
 
-def nm_findInstances(symbfile, prefix):
+def nmFindInstances(symbfile, prefix):
     '''
     gdb unable to retrive these, diffrent symbol table!?
     like $ nm -C main.o | grep $PREFIX | cut -d ' ' -f 1
@@ -99,6 +101,7 @@ def nm_findInstances(symbfile, prefix):
     if p.returncode != 0:
         log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
         return None
+
     for line in out.split('\n'):
         if not line:
             continue
@@ -122,12 +125,12 @@ def nm_findInstances(symbfile, prefix):
 def getSrcArgsList(objfile):
     ''' assumes objfile loaded to gdb prior call '''
     srcargsl = []
-    addresses = nm_findInstances(objfile, 'mkenumstr__')
+    addresses = nmFindInstances(objfile, 'mkenumstr__')
 
     for addr in addresses:
         srcargsd = gdbtoolz.getStructDict(addr, 'struct mkenumstr_job_s')
         srcargsl.append(SrcArgsNamespace(srcargsd))
-    #sort to same order as gencdg
+    # sort to same oreder as they are defined
     srcargsl.sort(key=lambda srcargs: srcargs.fileline)
     return srcargsl
 
@@ -137,13 +140,13 @@ def doEnum(cliargs, srcargs):
     h = []
     enumsfound = gdbtoolz.lookupEnums(gdbexpr)
     if len(enumsfound) == 0:
-        log.error('Failed to lookup "%s" %s:%d', gdbexpr, srcargs.filename,
-            srcargs.fileline)
+        emsgfmt = 'Failed to lookup "%s" %s:%d'
+        log.error(emsgfmt, gdbexpr, srcargs.filename, srcargs.fileline)
         sys.exit(1)
 
     if len(enumsfound) > 1 and not srcargs.mergedefs:
-        log.error('Multiple enums found "%s" %s:%d', gdbexpr, srcargs.filename,
-                    srcargs.fileline)
+        emsgfmt = 'Multiple enums found "%s" %s:%d'
+        log.error(emsgfmt, gdbexpr, srcargs.filename, srcargs.fileline)
         sys.exit(2)
 
     if len(enumsfound) > 1:
@@ -182,27 +185,26 @@ def export(outfile, srclines, outtype):
 
 def main():
     cliargs = envarg.getargs()
-    #log.setLevel(cliargs.loglevel) # FIXME
 
     logging.basicConfig(
         level=cliargs.loglevel, #logging.DEBUG,
-        stream=sys.stderr, #allows shell pipe of stdout
+        stream=sys.stderr, #allow shell pipe of stdout if no outfile
         format='mkenumstr:%(levelname)s:%(name)s:%(lineno)04d: %(message)s')
 
     log.debug('-------- GDB --------')
     log.debug(str(cliargs))
     #os.chdir(cliargs.cwd)
 
-    c = []#c code source lines
-    h = []#h header declear
+    c = [] # c code source lines
+    h = [] # h header declear
 
-    h.extend(codegen.doxyFileComments(cliargs.outh))
-    c.extend(codegen.doxyFileComments(cliargs.outc))
+    h.extend(codegen.fileDoxyComment(cliargs.outh))
+    c.extend(codegen.fileDoxyComment(cliargs.outc))
     inclguard = codegen.IncludeGuard(cliargs.outh)
     if cliargs.useguards:
         h.extend(inclguard.guardBegin())
 
-    #definitions likley depends on these headers
+    # definitions likley depends on these headers
     baseincls = [os.path.basename(fp) for fp in cliargs.inh]
     #baseincls = cliargs.inh
     h.extend(codegen.includeDirectives(baseincls))
