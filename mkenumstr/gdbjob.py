@@ -3,237 +3,176 @@ import gdb
 import os
 import logging
 import re
-import subprocess
-import tempfile
+#import subprocess
 import sys
-from pprint import pprint
+import json
+
+from collections import OrderedDict
+from operator import itemgetter
 
 # needed as python invoked by gdb
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(THIS_DIR) #
-
 import envarg
-import codegen
-import gdbtoolz
+
 
 log = logging.getLogger(os.path.basename(__file__))
 
-class SrcArgsNamespace(object):
-    def __init__(self, adict):
-        self.__dict__.update(adict)
 
-    def __iter__(self):
-        for k, v in self.__dict__.items():
-            yield k, v
+class EnumInfo(object):
 
-    def __str__(self):
-        return str(self.__dict__)
+    def __init__(self, members={}, expr='', defsrc='', name=''):
+        self.members = members
+        self.expr = expr
+        self.defsrc = defsrc
+        self.name = name
+
+    def todict(self):
+        d = {}
+        d['source'] = self.defsrc
+        d['name'] = self.name
+        d['expr'] = self.expr
+        d['members'] = OrderedDict(
+                sorted(self.members.items(), key=itemgetter(1)))
+        return d
 
 
-def relToFullPath(p):
-    return os.path.join(THIS_DIR, p)
+def loadSymbols(fpath):
+    r = gdb.execute('file ' + fpath, False, True)
+    assert(not r) #, 'gdb.execute returned %s', str(r))
 
-def compileSymbolTable(ifile, searchdirs=[], includes=[]):
+def isEnumType(t):
+    if t is None:
+        return False
+    ts = t.strip_typedefs()
+    if ts.code == gdb.TYPE_CODE_ENUM:
+        return True
+    return False
+
+
+def getBasicType(enumTypeName):
+    try:
+        t = gdb.lookup_type(enumTypeName)
+        return gdb.types.get_basic_type(t)
+    except RuntimeError:
+        pass
+    # Try find type from enum member name
+    try:
+        t = gdb.parse_and_eval(enumTypeName).type
+        return gdb.types.get_basic_type(t)
+    except RuntimeError:
+        pass
+
+    return None
+
+def getDefSource(symbName):
+    ''' 
+    source file and path where enum is defined.
+    Fails if symbName is enum member.
     '''
-    Symbol table used to parse MKENUNSTR_FUNC() macro parameters
-    and get enum values.
-    '''
-    TMP_FILE_PREFIX = 'mkenumstr_tmpfile_'
-    tmpc = tempfile.NamedTemporaryFile(
-            prefix=TMP_FILE_PREFIX,
-            suffix='.c',
-            delete=False)
-    srcfile = tmpc.name
+    r = gdb.execute('info types ^'+symbName +'$', False, True)
+    for l in r.splitlines():
+        if l.startswith('File'):
+            s = l.strip().lstrip('File').rstrip(':')
+            return s.strip()
+    return None
 
-    tmpo = tempfile.NamedTemporaryFile(
-            prefix=TMP_FILE_PREFIX,
-            suffix='.o',
-            delete=False)
-    objfile = tmpo.name
 
-    with open(srcfile,'w') as fh: #auto close
-            fh.write('int main(void) { return 0; }')
+def getEnums(expr, strict=False):
+    log.debug('expr "%s"', expr)
 
-    log.debug('Creating tmp symbol table %s', objfile)
-    cmd = ['gcc', '-o', objfile, srcfile,
-        '-O0', '-g', '-g3', '-ggdb', '-std=gnu99', '-Wall',
-        '-D', 'MKENUMSTR_COMPILE',
-        '-D', 'MKENUMSTR_SOURCE',
-        '-fno-eliminate-unused-debug-types',
-        '-include', relToFullPath('mkenumstr.h'),
-        '-include', ifile,
-        '-I', THIS_DIR
-    ]
-    for inclfile in includes:
-        cmd.extend(['-include', inclfile])
+    # first tryexact
+    btype = getBasicType(expr)
+    if btype is not None and isEnumType(btype):
+        log.debug('Found exact type "%s"', expr)
+        members = gdb.types.make_enum_dict(btype)
+        defsrc = getDefSource(expr)
+        name = btype.tag if btype.tag is not None else btype.name
+        return [EnumInfo(members, expr, defsrc, name)]
+        #return enumdefs, defsrcfile
+    enumsd = {}
 
-    for incldir in searchdirs:
-        cmd.extend(['-I', incldir])
+    expr = re.sub('^enum ', '', expr) # strip prefix if present
 
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    (out, err) = p.communicate()
+    # expr = expr.strip()
+    # if not expr.startswith('^'):
+        # expr = '^' + expr # sane default
 
-    if p.returncode != 0:
-        log.error('Failed to compile symbol table"')
-        objfile = None
-    if out:
-        log.info(out.decode('ascii')) # py3 as subprocess return bytes not str
-    if err:
-        log.error(err.decode('ascii')) # py3 as subprocess return bytes not str
-
-    log.debug('Removing temp srcfile %s', srcfile)
-    os.remove(srcfile)
-
-    return objfile
-
-def nmFindInstances(symbfile, prefix):
-    '''
-    gdb unable to retrive these, diffrent symbol table!?
-    like $ nm -C main.o | grep $PREFIX | cut -d ' ' -f 1
-    but a little bit more secure. sigh
-    '''
-    assert(os.path.exists(symbfile))
-    addrs = []
-
-    cmd = ['nm', '-C', symbfile]
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-    (out, err) = p.communicate()
-    if p.returncode != 0:
-        log.error('cmd %s returned %d. %s', ' '.join(cmd), p.returncode, err)
-        return None
-
-    for line in out.split('\n'):
-        if not line:
-            continue
-        cols = line.split(' ')
-        if len(cols) < 3:
-            log.debug('Ignoring nm line:%s', line)
-            continue
-        addr = cols[0]
-        styp = cols[1]
-        symb = cols[2]
-        if not symb.startswith(prefix):
+    r = gdb.execute('info types {}'.format(expr), False, True)
+    #suspects
+    for line in r.splitlines():
+        log.debug('  %s', line)
+        if line.startswith('File'):
+            defsrc =  line.strip().lstrip('File').rstrip(':').strip()
             continue
 
-        if styp != 'd': #"d" The symbol is in the initialized data section.
-            log.warning('Symbol %s at %s of type ("%s")', symb, addr, styp)
+        x = line.rstrip(';').split()
+        if 'enum' not in x:
+            continue
 
-        addrs.append(addr)
+        i = x.index('enum')
+        if len(x) < (i+1):
+            log.debug('  ignoring line "{}"'.format(line))
+            continue
+        candidate = x[i] + ' ' + x[i+1]
 
-    return addrs
+        log.debug('Looking up candidate:%s', candidate)
+        btype = getBasicType(candidate)
+        log.debug('Basic type tag:%s, name: %s', btype.tag, btype.name)
+        if not isEnumType(btype):
+            continue
 
-def getSrcArgsList(objfile):
-    ''' assumes objfile loaded to gdb prior call '''
-    srcargsl = []
-    addresses = nmFindInstances(objfile, 'mkenumstr__')
+        name = btype.tag if btype.tag is not None else btype.name
+        assert(name)
+        if name in enumsd:
+            log.debug('duplicate defs of "%s"', str(name))
+            continue # TODO compare dups?
+        members = gdb.types.make_enum_dict(btype)
 
-    for addr in addresses:
-        srcargsd = gdbtoolz.getStructDict(addr, 'struct mkenumstr_job_s')
-        srcargsl.append(SrcArgsNamespace(srcargsd))
-    # sort to same oreder as they are defined
-    srcargsl.sort(key=lambda srcargs: srcargs.fileline)
-    return srcargsl
+        enumsd[name] = EnumInfo(members, expr, defsrc, name)
 
-def doEnum(cliargs, srcargs):
-    gdbexpr = srcargs.find if srcargs.find else srcargs.funcprmtype
-    c = []
-    h = []
-    enumsfound = gdbtoolz.lookupEnums(gdbexpr)
-    if len(enumsfound) == 0:
-        emsgfmt = 'Failed to lookup "%s" %s:%d'
-        log.error(emsgfmt, gdbexpr, srcargs.filename, srcargs.fileline)
-        sys.exit(1)
-
-    if len(enumsfound) > 1 and not srcargs.mergedefs:
-        emsgfmt = 'Multiple enums found "%s" %s:%d'
-        log.error(emsgfmt, gdbexpr, srcargs.filename, srcargs.fileline)
-        sys.exit(2)
-
-    if len(enumsfound) > 1:
-        enumsfound.sort(key=lambda ef: min(ef.members.values()))
-
-    cgesparams = {}
-    cgesparams['doxydetails'] = [
-        'gencfg: {}:{}'.format(
-            os.path.basename(srcargs.filename), srcargs.fileline),
-        'enum: {}'.format(gdbexpr)
-    ]
-    cgesparams.update(dict(srcargs))
-    cgesparams.update(vars(cliargs))
-    cgesfunc = codegen.EnumStrFunc(**cgesparams)
-
-    for ef in enumsfound:
-        cgesfunc.addEnums(ef.members, ef.defsrc, ef.name)
-
-    return cgesfunc.generate()
-
-def export(outfile, srclines, outtype):
-    if not outfile:
-        log.info('No output destination provides?')
-        if outtype == 'h':
-            print('/* -------- MKENUMSTR DECLARATIONS OUTPUT -------- */')
-        else:
-            print('/* -------- MKENUMSTR DEFINITONS OUTPUT -------- */')
-        for line in srclines:
-            print(line)
-    else:
-        #TODO check file exists
-        log.info('Writing source file %s', outfile)
-        with open(outfile,'w') as fh:
-            fh.write('\n'.join(srclines))
-
+    return enumsd.values()
 
 def main():
-    cliargs = envarg.getargs()
+    args = envarg.getargs()
 
     logging.basicConfig(
-        level=cliargs.loglevel, #logging.DEBUG,
+        level=args.loglevel, #logging.DEBUG,
         stream=sys.stderr, #allow shell pipe of stdout if no outfile
         format='mkenumstr:%(levelname)s:%(name)s:%(lineno)04d: %(message)s')
 
     log.debug('-------- GDB --------')
-    log.debug(str(cliargs))
-    #os.chdir(cliargs.cwd)
+    log.debug(str(args))
+    #os.chdir(args.cwd)
+    if not args.enum:
+        log.error('No enum expr')
+        return 0
 
-    c = [] # c code source lines
-    h = [] # h header declear
+    for infile in args.infile:
+        if not os.path.isfile(infile):
+            log.error('No such file "%s"', infile)
+            return 1
+        loadSymbols(infile)
 
-    h.extend(codegen.fileDoxyComment(cliargs.outh))
-    c.extend(codegen.fileDoxyComment(cliargs.outc))
-    inclguard = codegen.IncludeGuard(cliargs.outh)
-    if cliargs.useguards:
-        h.extend(inclguard.guardBegin())
+    outd = []
 
-    # definitions likley depends on these headers
-    baseincls = [os.path.basename(fp) for fp in cliargs.inh]
-    #baseincls = cliargs.inh
-    h.extend(codegen.includeDirectives(baseincls))
-    c.extend(['#define MKENUMSTR_SOURCE'])
-    c.extend(codegen.includeDirectives(baseincls))
+    for expr in args.enum:
 
-    if cliargs.includes:
-        includes = codegen.includeDirectives(cliargs.includes)
-        c.extend(includes)
+        enums = getEnums(expr)
+        if not enums:
+            log.warn('No enum(s) found from expression "%s"', expr)
+            continue
+        for enum in enums:
+            d = enum.todict()
+            outd.append(d)
 
-    for ih in cliargs.inh:
-        objfile = compileSymbolTable(ih, cliargs.searchdir, cliargs.includes)
-        gdbtoolz.loadSymbols(objfile)
-        srcargsList = getSrcArgsList(objfile)
-        for srcargs in srcargsList:
-            log.debug(srcargs)
-            _c, _h = doEnum(cliargs, srcargs)
-            c.extend(_c)
-            h.extend(_h)
-        if not srcargsList:
-            log.warning('Found nothing to export from %s', ih)
-        log.debug('Removing temp file %s', objfile)
-        os.remove(objfile)
+    outs = json.dumps(outd, indent=4)
+    if args.outfile is None:
+        print(outs)
+    else:
+        with open(args.outfile, 'w') as fh:
+            fh.write(outs)
 
-    if cliargs.useguards:
-        h.extend(inclguard.guardEnd())
-
-    export(cliargs.outc, c, 'c')
-    export(cliargs.outh, h, 'h')
 
     return 0
 

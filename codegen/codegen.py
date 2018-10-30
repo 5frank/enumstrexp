@@ -143,18 +143,18 @@ class BitPosMacro(object):
 
         return c
 
-    def getUndefs():
+    def getUndefs(self):
         c = [
             tabs(1) + '#undef MSKCMP',
             tabs(1) + '#undef BITPOS_INVALID_DEFAULT',
             tabs(1) + '#undef BITPOS']
         return c
 
-    def caseLblFmt(defname):
+    def caseLabelFmt(self, defname):
         ''' wrap a enum name in the bitpos macro '''
         return 'BITPOS({})'.format(defname)
 
-    def caseDefault():
+    def caseDefault(self):
         ''' the return value should be added togheter with the default
         case and will give a compiletime error on duplicate case value
         iff any enum have a invalid bit flag value. i.e. more then one bit
@@ -163,8 +163,10 @@ class BitPosMacro(object):
         return 'BITPOS_INVALID_DEFAULT'
 
 class _Enums(object):
-    ''' Continer of orginal enum definitions, values and string representation
-    to be used in generated code '''
+    '''
+    Container of orginal enum definitions, values and their string
+    representation to be used in generated code output
+    '''
     def __init__(self, enumdefs, defsrc='', name=''):
         self.enumdefs = enumdefs # {<enum_def_name> : <value>, ...}
         #self.enumrepr = enumrepr # {<enum_def_name> : <string_repr>, ...}
@@ -183,10 +185,10 @@ class _Enums(object):
         return comments
 
 class EnumStrFunc(object):
-    ''' Generate a Enum to c-string lookup function.
-    all code generator functions return list(s) of containing lines of code
+    '''
+    Generate a Enum to c-string lookup function.
+    all code generator functions return list(s) containing valid  c-code
     or comments.
-    if some o
     '''
     def __init__(self,
                 funcname,
@@ -203,7 +205,8 @@ class EnumStrFunc(object):
         '''
         init will only set up options. assumes enums to be added later.
         If some parameters are bad, and not checked for, it should give
-        a error when trying to compile the gereated code
+        a error when trying to compile the generated c-code
+
         Parameters:
             funcname - symbol name on generated function
             funcprmtype -
@@ -237,6 +240,7 @@ class EnumStrFunc(object):
     def addEnums(self, enumdefs, defsrc='', name=''):
         '''
         Add/append enums for export.
+
         Parameters:
             enumdefs - dict. (<enum_name> : <int_value>,...}
             defsrc - str. file  where enum defined
@@ -316,6 +320,7 @@ class EnumStrFunc(object):
 
         return c
 
+
     def funcDefCases(self, enumdefs, enumrepr):
         '''
         Allows multiple calls, will only add cases.
@@ -326,10 +331,10 @@ class EnumStrFunc(object):
         c = []
 
         xindent = ''
-        def caselblfmt(defname):
+        def caseLabelFmt(defname):
             label = defname if self.usedefs else int(enumdefs[defname])
             if self.usebitpos:
-                label = self.bitposmacro.caseLblFmt(label)
+                label = self.bitposmacro.caseLabelFmt(label)
             return label
 
         excluded = []
@@ -342,13 +347,13 @@ class EnumStrFunc(object):
                 excluded.append(defname)
                 continue
             c.extend([
-                '{}case {}:'.format(tabs(2), caselblfmt(defname)),
+                '{}case {}:'.format(tabs(2), caseLabelFmt(defname)),
                 '{}return {}"{}";'.format(tabs(3), xindent, strname)
             ])
 
         for defname in excluded:
             c.extend([
-            '{}/* case {}:  excluded */'.format(tabs(2), caselblfmt(defname))
+            '{}/* case {}:  excluded */'.format(tabs(2), caseLabelFmt(defname))
             ])
 
         return c

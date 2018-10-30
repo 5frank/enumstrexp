@@ -9,6 +9,7 @@ enum testenum_simple_e
   testenum_simple_LAST
 };
 
+
 /// negative valeus and jumps (i.e. not continous)
 enum testenum_negjmp_e
 {

@@ -20,14 +20,6 @@ MKENUMSTR_FUNC(enumstr_myenum1, int,
 
 #if 0
 
-
-MKENUMSTR_FUNC(enumstr_myenum3, int,
-    .find = "^syserr_*",
-    .exclude = "^_",
-    .strstrip = "^syserr_",
-    .mergedefs = true
-);
-
 MKENUMSTR_FUNC(enumstr_myenum3, int, "^syserr_*",
     .name_excl = "^_",
     .name_strip = "^syserr_",
